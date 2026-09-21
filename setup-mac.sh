@@ -12,8 +12,9 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 # 2. Ask for personal key (read from terminal even when piped from curl)
-printf "Paste your personal hackathon key (starts with sk-or-): "
-read -r KEY < /dev/tty
+printf "Paste your personal hackathon key (starts with sk-or-, it stays hidden): "
+read -rs KEY < /dev/tty; echo
+KEY="$(printf "%s" "$KEY" | tr -d '[:space:]')"
 case "$KEY" in sk-or-*) ;; *) echo "That does not look like a valid key. Re-run the command."; exit 1;; esac
 
 # 3. Create the ONE work folder + settings scoped to that folder only
@@ -29,7 +30,8 @@ cat > "$DIR/.claude/settings.local.json" <<JSON
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic/claude-haiku-4.5",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic/claude-haiku-4.5",
     "CLAUDE_CODE_SUBAGENT_MODEL": "anthropic/claude-haiku-4.5",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
   },
   "permissions": {
     "disableBypassPermissionsMode": "disable",
@@ -56,6 +58,16 @@ cat > "$DIR/CLAUDE.md" <<'MD'
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
 MD
+
+# 3b. Skip the first-run login screen (auth comes from the hackathon key)
+F="$HOME/.claude.json"
+if [ ! -s "$F" ] || [ "$(tr -d '[:space:]' < "$F")" = "{}" ]; then
+  echo '{"hasCompletedOnboarding": true}' > "$F"
+elif grep -q '"hasCompletedOnboarding"' "$F"; then
+  sed -i '' 's/"hasCompletedOnboarding": *false/"hasCompletedOnboarding": true/' "$F"
+else
+  sed -i '' '1s/^{/{"hasCompletedOnboarding": true,/' "$F"
+fi
 
 # 4. Test
 cd "$DIR"
