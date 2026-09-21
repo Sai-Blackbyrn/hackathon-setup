@@ -64,11 +64,11 @@ $settings = @"
     "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
     "ANTHROPIC_AUTH_TOKEN": "$Key",
     "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic/claude-haiku-4.5",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "anthropic/claude-haiku-4.5",
+    "ANTHROPIC_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "openai/gpt-5-mini",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "openai/gpt-5-mini",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
   },
@@ -123,6 +123,17 @@ $cmd = "@echo off`r`ncd /d `"%USERPROFILE%\claude-hackathon`"`r`n`"%USERPROFILE%
 [System.IO.File]::WriteAllText("$Shim\claude.cmd", $cmd)
 $userPath = [Environment]::GetEnvironmentVariable("Path","User")
 if ($userPath -notlike "*$Shim*") { [Environment]::SetEnvironmentVariable("Path", "$Shim;$userPath", "User") }
+# PowerShell: a profile function always wins over programs on PATH
+try {
+  $pol = Get-ExecutionPolicy -Scope CurrentUser
+  if ($pol -eq "Undefined" -or $pol -eq "Restricted") { Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force }
+  foreach ($prof in @($PROFILE.CurrentUserAllHosts)) {
+    New-Item -ItemType File -Force -Path $prof -ErrorAction SilentlyContinue | Out-Null
+    if (-not (Select-String -Path $prof -Pattern "hackathon claude" -Quiet)) {
+      Add-Content -Path $prof -Value "`r`n# >>> hackathon claude >>>`r`nfunction claude { Set-Location `"`$HOME\claude-hackathon`"; & `"`$HOME\.local\bin\claude.exe`" @args }`r`n# <<< hackathon claude <<<"
+    }
+  }
+} catch { Write-Host "Note: could not add the PowerShell shortcut ($_)" }
 
 # 8. Test the connection
 Write-Host "Testing Claude..."
@@ -149,7 +160,7 @@ if ($GhOK) {
 Write-Host ""
 if ($ClaudeOK -and $GhOK) {
   Write-Host "PASS - screenshot this and send it to the organisers." -ForegroundColor Green
-  Write-Host "Close this window, open a NEW PowerShell window and type:  claude"
+  Write-Host "Close ALL PowerShell / Terminal windows, open PowerShell again and type:  claude"
 } else {
   if (-not $ClaudeOK) { Write-Host "FAIL (Claude) - re-run this setup command. Still failing? Send a screenshot to the help channel." -ForegroundColor Red }
   if (-not $GhOK) { Write-Host "FAIL (GitHub login) - run:  gh auth login   then try again." -ForegroundColor Red }
