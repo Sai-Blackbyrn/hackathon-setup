@@ -3,10 +3,17 @@ $ErrorActionPreference = "Stop"
 $Dir = "$env:USERPROFILE\claude-hackathon"
 Write-Host "== Hackathon setup =="
 
-# 0. Git for Windows is required by Claude Code on Windows
+# 0. Git for Windows is required by Claude Code on Windows - install it automatically if missing
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  Write-Host "Git for Windows is missing. Install it from https://git-scm.com/download/win (all defaults), close PowerShell, then run this command again." -ForegroundColor Red
-  return
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "Installing Git (click YES if Windows asks for permission)..."
+    winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Program Files\Git\cmd"
+  }
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Could not install Git automatically. Install it from https://git-scm.com/download/win (click Next on every screen), close PowerShell, then run this command again." -ForegroundColor Red
+    return
+  }
 }
 
 # 1. Install Claude Code (official native installer, per-user)
