@@ -46,11 +46,11 @@ cat > "$DIR/.claude/settings.local.json" <<JSON
     "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
     "ANTHROPIC_AUTH_TOKEN": "$KEY",
     "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic/claude-haiku-4.5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic/claude-haiku-4.5",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "anthropic/claude-haiku-4.5",
+    "ANTHROPIC_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "openai/gpt-5-mini",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "openai/gpt-5-mini",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "openai/gpt-5-mini",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
   },
@@ -135,7 +135,7 @@ fi
 echo ""
 if [ "$CLAUDE_OK" = 1 ] && [ "$GH_OK" = 1 ]; then
   echo "PASS - screenshot this and send it to the organisers."
-  echo "Close this window, open a NEW Terminal window and type:  claude"
+  echo "Close ALL Terminal windows, open Terminal again and type:  claude"
 else
   [ "$CLAUDE_OK" = 1 ] || echo "FAIL (Claude) - re-run this setup command. Still failing? Send a screenshot to the help channel."
   [ "$GH_OK" = 1 ] || echo "FAIL (GitHub login) - run:  gh auth login   then try again."
