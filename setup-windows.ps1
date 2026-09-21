@@ -1,36 +1,63 @@
-# Coach Foundation Hackathon - Claude Code setup (Windows PowerShell)
-$ErrorActionPreference = "Stop"
-$Dir = "$env:USERPROFILE\claude-hackathon"
-Write-Host "== Hackathon setup =="
+# Coach Foundation Hackathon - one-command setup (Windows PowerShell)
+# Installs: Git, GitHub CLI, Node.js, Python 3.12, Claude Code, UI/UX Pro Max skill.
+# Then connects Claude Code to the hackathon key.
+$ErrorActionPreference = "Continue"
+$Dir  = "$env:USERPROFILE\claude-hackathon"
+$Shim = "$env:USERPROFILE\.claude-hackathon-bin"
+Write-Host "== Hackathon setup (about 10-20 minutes). Click YES whenever Windows asks for permission. =="
 
-# 0. Git for Windows is required by Claude Code on Windows - install it automatically if missing
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  if (Get-Command winget -ErrorAction SilentlyContinue) {
-    Write-Host "Installing Git (click YES if Windows asks for permission)..."
-    winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements
-    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Program Files\Git\cmd"
-  }
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "Could not install Git automatically. Install it from https://git-scm.com/download/win (click Next on every screen), close PowerShell, then run this command again." -ForegroundColor Red
-    return
-  }
+function Refresh-Path {
+  $env:Path = "$Shim;$env:USERPROFILE\.local\bin;" + [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Program Files\Git\cmd;C:\Program Files\GitHub CLI;C:\Program Files\nodejs;$env:APPDATA\npm"
 }
 
-# 1. Install Claude Code (official native installer, per-user)
-$env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-  Write-Host "Installing Claude Code..."
-  irm https://claude.ai/install.ps1 | iex
-  $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-}
-
-# 2. Personal key
+# 1. Personal key first, so the rest can run unattended
 $sec = Read-Host "Paste your personal hackathon key (starts with sk-or-, it stays hidden)" -AsSecureString
 $Key = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)).Trim()
 if (-not $Key.StartsWith("sk-or-")) { Write-Host "That does not look like a valid key. Re-run the command." -ForegroundColor Red; return }
 
-# 3. ONE work folder + settings scoped to it
+# 2. Tools via winget
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+  Write-Host "This Windows version is missing 'winget' (App Installer). Install 'App Installer' from the Microsoft Store, then run this command again." -ForegroundColor Red
+  return
+}
+function Install-Pkg($id, $name, $extra) {
+  Write-Host "Installing $name..."
+  $wa = @("install","--id",$id,"-e","--source","winget","--silent","--accept-package-agreements","--accept-source-agreements") + $extra
+  & winget @wa
+}
+Refresh-Path
+if (-not (Get-Command git  -ErrorAction SilentlyContinue)) { Install-Pkg "Git.Git" "Git" @() }
+if (-not (Get-Command gh   -ErrorAction SilentlyContinue)) { Install-Pkg "GitHub.cli" "GitHub CLI" @() }
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Install-Pkg "OpenJS.NodeJS.LTS" "Node.js" @() }
+$py = "$env:LOCALAPPDATA\Programs\Python\Python312"
+if (-not (Test-Path "$py\python.exe")) {
+  Install-Pkg "Python.Python.3.12" "Python 3.12" @("--override","/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1")
+}
+if ((Test-Path "$py\python.exe") -and -not (Test-Path "$py\python3.exe")) { Copy-Item "$py\python.exe" "$py\python3.exe" }
+Refresh-Path
+$env:Path = "$py;$py\Scripts;$env:Path"
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  Write-Host "Git did not install. Install it from https://git-scm.com/download/win (click Next on every screen), then run this command again." -ForegroundColor Red
+  return
+}
+
+# 3. Claude Code (official native installer)
+if (-not (Test-Path "$env:USERPROFILE\.local\bin\claude.exe")) {
+  Write-Host "Installing Claude Code..."
+  irm https://claude.ai/install.ps1 | iex
+}
+Refresh-Path
+$ClaudeExe = "$env:USERPROFILE\.local\bin\claude.exe"
+
+# 4. UI/UX Pro Max design skill
+Write-Host "Installing the UI/UX Pro Max design skill..."
+& npm.cmd install -g uipro-cli | Out-Null
 New-Item -ItemType Directory -Force -Path "$Dir\.claude" | Out-Null
+Set-Location $Dir
+& "$env:APPDATA\npm\uipro.cmd" init --ai claude
+if ($LASTEXITCODE -ne 0) { & "$env:APPDATA\npm\uipro.cmd" init --ai claude --offline }
+
+# 5. Workspace settings (key + safety rules), scoped to the workspace folder
 $settings = @"
 {
   "env": {
@@ -51,28 +78,34 @@ $settings = @"
       "Bash(sudo:*)", "Bash(rm -rf:*)", "Bash(rm -r:*)", "Bash(rmdir:*)",
       "Bash(del:*)", "Bash(Remove-Item:*)", "Bash(format:*)", "Bash(shutdown:*)",
       "Bash(chmod -R:*)", "Bash(chown:*)",
+      "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(gh repo delete:*)",
       "Read(~/.ssh/**)", "Read(~/.aws/**)", "Edit(~/.bashrc)", "Edit(~/.zshrc)"
     ]
   }
 }
+
 "@
-[System.IO.File]::WriteAllText("$Dir\.claude\settings.local.json", $settings)   # UTF-8 without BOM
+[System.IO.File]::WriteAllText("$Dir\.claude\settings.local.json", $settings)
 $md = @'
 # Hackathon rules for the assistant
 - Only create and edit files inside this folder. Never touch files outside it.
 - Never run commands that delete folders, change system settings, or install software globally. Ask first if unsure.
 - Keep answers short. Make small changes, then show the result.
-- Build with plain HTML/CSS/JS unless the user asks for a framework. No build step, no server, no npm.
-- Put every project in its own subfolder (e.g. landing-page/, habit-app/) with index.html at the top of that subfolder.
-- Use relative paths only (e.g. about.html, images/logo.png). Never use C:\ or /Users/ paths. Everything must work when the subfolder is uploaded to GitHub Pages.
+- Build with plain HTML/CSS/JS unless the user asks for a framework. No build step, no server.
+- Use the ui-ux-pro-max skill for design choices (styles, colours, fonts). On Windows, if python3 fails, use python.
+- Put every project in its own subfolder (e.g. bakery/, habit-app/) with index.html at the top of that subfolder.
+- Use relative paths only (e.g. about.html, images/logo.png). Never use C:\ or /Users/ paths.
 - Save app data in the browser (localStorage). No databases or backend.
-- Never put files inside the .claude folder, and remind the user to upload only the project subfolder to GitHub, never the whole claude-hackathon folder.
+- To show a project, open its index.html in the user's browser.
+- To publish a project when asked: work ONLY inside that project's subfolder. Run git init -b main, git add ., git commit, then gh repo create <subfolder-name> --public --source=. --push, then enable GitHub Pages with: gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/" . Give the user the link https://<owner>.github.io/<repo>/ (it can take 2 minutes to go live).
+- Never run git init in the main claude-hackathon folder, never commit or upload the .claude folder, never force-push, never delete repositories.
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
+
 '@
 [System.IO.File]::WriteAllText("$Dir\CLAUDE.md", $md)
 
-# 3b. Skip the first-run login screen (auth comes from the hackathon key)
+# 6. Skip the first-run login screen (auth comes from the hackathon key)
 $F = "$env:USERPROFILE\.claude.json"
 try {
   if ((Test-Path $F) -and ((Get-Content $F -Raw).Trim().Length -gt 2)) {
@@ -82,16 +115,42 @@ try {
   } else {
     [System.IO.File]::WriteAllText($F, '{"hasCompletedOnboarding": true}')
   }
-} catch { Write-Host "Note: could not update .claude.json (safe to ignore)" }
+} catch { }
 
-# 4. Test
-$ErrorActionPreference = "Continue"   # native stderr must not abort the test
-Set-Location $Dir
-Write-Host "Testing connection..."
-$out = (claude -p "Reply with exactly: SETUP OK" 2>&1 | Out-String)
-if ($out -match "SETUP OK") {
-  Write-Host "`nPASS - screenshot this and send it to the organisers." -ForegroundColor Green
-  Write-Host "From now on: open PowerShell, type  cd ~\claude-hackathon  then  claude"
+# 7. Typing "claude" anywhere opens it in the hackathon workspace
+New-Item -ItemType Directory -Force -Path $Shim | Out-Null
+$cmd = "@echo off`r`ncd /d `"%USERPROFILE%\claude-hackathon`"`r`n`"%USERPROFILE%\.local\bin\claude.exe`" %*`r`n"
+[System.IO.File]::WriteAllText("$Shim\claude.cmd", $cmd)
+$userPath = [Environment]::GetEnvironmentVariable("Path","User")
+if ($userPath -notlike "*$Shim*") { [Environment]::SetEnvironmentVariable("Path", "$Shim;$userPath", "User") }
+
+# 8. Test the connection
+Write-Host "Testing Claude..."
+$out = (& $ClaudeExe -p "Reply with exactly: SETUP OK" 2>&1 | Out-String)
+$ClaudeOK = $out -match "SETUP OK"
+
+# 9. Log in to GitHub (opens your browser)
+& gh auth status *> $null
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "`nNow log in to GitHub. Press Enter when asked, then paste the code shown here into the browser." -ForegroundColor Cyan
+  & gh auth login -h github.com -p https -w
+}
+& gh auth status *> $null
+$GhOK = ($LASTEXITCODE -eq 0)
+if ($GhOK) {
+  & gh auth setup-git *> $null
+  if (-not (& git config --global user.name)) {
+    $u = (& gh api user | ConvertFrom-Json)
+    & git config --global user.name $u.login
+    & git config --global user.email "$($u.id)+$($u.login)@users.noreply.github.com"
+  }
+}
+
+Write-Host ""
+if ($ClaudeOK -and $GhOK) {
+  Write-Host "PASS - screenshot this and send it to the organisers." -ForegroundColor Green
+  Write-Host "Close this window, open a NEW PowerShell window and type:  claude"
 } else {
-  Write-Host "`nFAIL - run  claude  then type  /logout , exit, and re-run this setup. Still failing? Send a screenshot to the help channel." -ForegroundColor Red
+  if (-not $ClaudeOK) { Write-Host "FAIL (Claude) - re-run this setup command. Still failing? Send a screenshot to the help channel." -ForegroundColor Red }
+  if (-not $GhOK) { Write-Host "FAIL (GitHub login) - run:  gh auth login   then try again." -ForegroundColor Red }
 }
