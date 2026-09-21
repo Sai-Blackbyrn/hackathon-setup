@@ -18,7 +18,8 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 }
 
 # 2. Personal key
-$Key = Read-Host "Paste your personal hackathon key (starts with sk-or-)"
+$sec = Read-Host "Paste your personal hackathon key (starts with sk-or-, it stays hidden)" -AsSecureString
+$Key = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)).Trim()
 if (-not $Key.StartsWith("sk-or-")) { Write-Host "That does not look like a valid key. Re-run the command." -ForegroundColor Red; return }
 
 # 3. ONE work folder + settings scoped to it
@@ -34,7 +35,8 @@ $settings = @"
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic/claude-haiku-4.5",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic/claude-haiku-4.5",
     "CLAUDE_CODE_SUBAGENT_MODEL": "anthropic/claude-haiku-4.5",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
   },
   "permissions": {
     "disableBypassPermissionsMode": "disable",
@@ -62,6 +64,18 @@ $md = @'
 - Never ask for or store passwords, API keys, or personal data in code.
 '@
 [System.IO.File]::WriteAllText("$Dir\CLAUDE.md", $md)
+
+# 3b. Skip the first-run login screen (auth comes from the hackathon key)
+$F = "$env:USERPROFILE\.claude.json"
+try {
+  if ((Test-Path $F) -and ((Get-Content $F -Raw).Trim().Length -gt 2)) {
+    $j = Get-Content $F -Raw | ConvertFrom-Json
+    $j | Add-Member -NotePropertyName hasCompletedOnboarding -NotePropertyValue $true -Force
+    [System.IO.File]::WriteAllText($F, ($j | ConvertTo-Json -Depth 100))
+  } else {
+    [System.IO.File]::WriteAllText($F, '{"hasCompletedOnboarding": true}')
+  }
+} catch { Write-Host "Note: could not update .claude.json (safe to ignore)" }
 
 # 4. Test
 $ErrorActionPreference = "Continue"   # native stderr must not abort the test
