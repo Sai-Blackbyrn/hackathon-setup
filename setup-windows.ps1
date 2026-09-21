@@ -53,7 +53,11 @@ $md = @'
 - Only create and edit files inside this folder. Never touch files outside it.
 - Never run commands that delete folders, change system settings, or install software globally. Ask first if unsure.
 - Keep answers short. Make small changes, then show the result.
-- Build with plain HTML/CSS/JS unless the user asks for a framework.
+- Build with plain HTML/CSS/JS unless the user asks for a framework. No build step, no server, no npm.
+- Put every project in its own subfolder (e.g. landing-page/, habit-app/) with index.html at the top of that subfolder.
+- Use relative paths only (e.g. about.html, images/logo.png). Never use C:\ or /Users/ paths. Everything must work when the subfolder is uploaded to GitHub Pages.
+- Save app data in the browser (localStorage). No databases or backend.
+- Never put files inside the .claude folder, and remind the user to upload only the project subfolder to GitHub, never the whole claude-hackathon folder.
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
 '@
