@@ -217,9 +217,10 @@ function Ensure-Tool($key, $name, $id, $extra, $code) {
       Write-Host ">> A Windows popup will ask 'Do you want to allow this app to make changes?'. Click YES." -ForegroundColor Yellow
       Write-Host ">> No popup? Look for a flashing shield icon on the taskbar and click it." -ForegroundColor Yellow
     } else { Write-Host "Installing $name..." -ForegroundColor Cyan }
-    $wa = @('install', '--id', $id, '-e', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity') + $extra
+    $wa = @('install', '--id', $id, '-e', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements') + $extra
     & winget @wa
     $ec = $LASTEXITCODE
+    $ErrorActionPreference = 'Continue'
     if ((Test-Tools)[$key]) { OK "$name installed"; return }
     if ($attempt -eq 1) {
       Write-Host "$name did not install (code $ec). This usually means the permission popup was closed or No was clicked." -ForegroundColor Yellow
@@ -232,7 +233,7 @@ function Ensure-Tool($key, $name, $id, $extra, $code) {
 
 if ($missing.Count -gt 0) {
   $script:Step = 'preparing the Windows installer'
-  & winget source update --disable-interactivity *> $null
+  & winget source update *> $null
 }
 Ensure-Tool 'git'    'Git'         'Git.Git'           @() 'T1'
 Ensure-Tool 'gh'     'GitHub CLI'  'GitHub.cli'        @() 'T2'
@@ -241,9 +242,9 @@ if (-not (Test-Tools).node -and (Get-Command node -ErrorAction SilentlyContinue)
   $script:Step = 'updating Node.js'
   Write-Host ""; Write-Host "Your Node.js is too old ($(& node -v)). Updating it..." -ForegroundColor Cyan
   Write-Host ">> If a Windows popup asks for permission, click YES." -ForegroundColor Yellow
-  & winget upgrade --id OpenJS.NodeJS.LTS -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+  & winget upgrade --id OpenJS.NodeJS.LTS -e --source winget --silent --accept-package-agreements --accept-source-agreements
   if (-not (Test-Tools).node) {
-    & winget install --id OpenJS.NodeJS.LTS -e --source winget --silent --force --accept-package-agreements --accept-source-agreements --disable-interactivity
+    & winget install --id OpenJS.NodeJS.LTS -e --source winget --silent --force --accept-package-agreements --accept-source-agreements
   }
   if (-not (Test-Tools).node) { Fail T3 "Your old Node.js ($(& node -v)) could not be updated. Open Settings > Apps, uninstall Node.js (and nvm if you see it), then run the command again." }
 }
@@ -263,6 +264,7 @@ if (-not $haveCc -or -not (Ver-Ge $haveCc $CcVersion)) {
   try { & ([scriptblock]::Create((Invoke-RestMethod https://claude.ai/install.ps1))) $CcVersion }
   catch { try { & ([scriptblock]::Create((Invoke-RestMethod https://claude.ai/install.ps1))) latest } catch {} }
 }
+$ErrorActionPreference = 'Continue'
 if (-not (Test-Path $ClaudeExe)) {
   Fail C1 "Claude Code did not install. If Windows Security showed a warning, open Windows Security > Virus & threat protection > Protection history, allow claude.exe, then run the command again. Otherwise check your internet and run the command again."
 }
@@ -278,6 +280,7 @@ $uipro = "$env:APPDATA\npm\uipro.cmd"
 Push-Location $Dir
 if (Test-Path $uipro) {
   & $uipro init --ai claude
+  $ErrorActionPreference = 'Continue'
   if (-not (Get-ChildItem "$Dir\.claude\skills" -Recurse -Filter SKILL.md -ErrorAction SilentlyContinue)) { & $uipro init --ai claude --offline }
 }
 Pop-Location
@@ -408,7 +411,7 @@ if ($ccv) {
       $p = Start-Process -FilePath $ClaudeExe -ArgumentList '-p', '"Reply with exactly: SETUP OK"' -WorkingDirectory $Dir `
             -NoNewWindow -PassThru -RedirectStandardOutput $tOut -RedirectStandardError $tErr
       if (-not $p.WaitForExit(180000)) { try { $p.Kill() } catch {}; $timed = $true }
-      $out = ((Get-Content $tOut -ErrorAction SilentlyContinue) + (Get-Content $tErr -ErrorAction SilentlyContinue) |
+      $out = (@(Get-Content $tOut -ErrorAction SilentlyContinue) + @(Get-Content $tErr -ErrorAction SilentlyContinue) |
               Where-Object { $_ -and ($_ -notmatch 'unrecognized_model') }) -join "`n"
     } catch { $out = "$_" }
     if ($out -match 'SETUP OK') { $ClOK = $true; break }
@@ -461,6 +464,10 @@ Write-Host ""
 if ($All -and $ClOK) {
   Write-Host "PASS - take a screenshot of this window and send it to the organisers." -ForegroundColor Green
   if ($Mode -eq 'install') { Write-Host "Now close ALL PowerShell windows, open PowerShell again, and type:  claude" }
+  return
+}
+if ($Mode -eq 'check') {
+  Write-Host "CHECK DONE - items marked FAIL above are not ready. Run the setup command to fix them, or send this screenshot to the help group." -ForegroundColor Yellow
   return
 }
 if ($ClCode) { Fail $ClCode $ClMsg }
