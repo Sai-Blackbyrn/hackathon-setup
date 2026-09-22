@@ -447,6 +447,7 @@ $picker = [ordered]@{
   options = @(
     [ordered]@{ model = 'openai/gpt-5-mini'; label = 'GPT-5 mini'; description = 'Default. Fast and cheapest' },
     [ordered]@{ model = 'anthropic/claude-haiku-4.5'; label = 'Claude Haiku 4.5'; description = 'Most Claude-like. Good for building sites' },
+    [ordered]@{ model = 'anthropic/claude-sonnet-5'; label = 'Claude Sonnet 5'; description = 'Best results. Uses credit fast' },
     [ordered]@{ model = 'openai/gpt-5.6-terra'; label = 'GPT-5.6 Terra'; description = 'Stronger. Uses more credit' },
     [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Strongest. Uses credit fastest' }
   )
