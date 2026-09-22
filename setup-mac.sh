@@ -120,7 +120,7 @@ check_tools() {
   done
   return 0
 }
-existing_key() { sed -n 's/.*"ANTHROPIC_AUTH_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$DIR/.claude/settings.local.json" 2>/dev/null | head -n1; }
+existing_key() { cat "$HOME/.claude/settings.json" "$DIR/.claude/settings.local.json" 2>/dev/null | sed -n 's/.*"ANTHROPIC_AUTH_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1; }
 ARCH="$(uname -m)"
 
 # ===================================================================================
@@ -350,12 +350,12 @@ fi
 STEP="installing the design skill"
 step "7 of 9" "Design skill (about 1 minute)"
 mkdir -p "$DIR/.claude"
-if [ -f "$DIR/.claude/skills/design-system/SKILL.md" ]; then ok "Design skill is already installed. Skipping this step."
+if [ -f "$HOME/.claude/skills/design-system/SKILL.md" ]; then ok "Design skill is already installed. Skipping this step."
 elif [ -z "$NODE" ]; then note_skip "Design skill skipped (it needs Node.js). Claude Code still works."
 else
   get_skill() { "$(dirname "$NODE")/npm" install -g --prefix "$HOME/.local" "ui-ux-pro-max-cli@$UIPRO_VERSION" --no-fund --no-audit < /dev/null \
-                && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude --force --offline < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --force < /dev/null; } ) \
-                && [ -f "$DIR/.claude/skills/ui-ux-pro-max/SKILL.md" ]; }
+                && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude --global --force --offline < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --global --force < /dev/null; } ) \
+                && [ -f "$HOME/.claude/skills/ui-ux-pro-max/SKILL.md" ] && rm -rf "$DIR/.claude/skills"; }
   printf "${INST}Installing the design skill...${N}\n"
   retry "Installing the design skill" get_skill && ok "Design skill installed" \
     || note_skip "The design skill did not install. Setup continues without it. Claude Code still works."
@@ -365,8 +365,13 @@ fi
 STEP="saving your settings"
 step "8 of 9" "Saving your settings (a few seconds)"
 # Sandbox is off on purpose: gh (used to publish) can fail inside the Mac sandbox, and Windows has none.
+# The key, model and safety rules go in Claude Code's USER settings (~/.claude/settings.json),
+# so they work in every folder. Anything the student already had in that file is kept.
+mkdir -p "$HOME/.claude"
+CS="$HOME/.claude/settings.json"; HS="$TOOLS/hackathon-settings.json"
+[ -s "$CS" ] && cp "$CS" "$CS.hackathon-backup" 2>/dev/null
 umask 077
-cat > "$DIR/.claude/settings.local.json" <<JSON
+cat > "$HS" <<JSON
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
@@ -393,22 +398,55 @@ cat > "$DIR/.claude/settings.local.json" <<JSON
   }
 }
 JSON
+MERGED=0
+if [ -n "$NODE" ] && "$NODE" -e '
+const fs=require("fs"), f=process.argv[1], h=process.argv[2];
+let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
+const n=JSON.parse(fs.readFileSync(h,"utf8"));
+j.env=Object.assign({}, j.env, n.env); j.permissions=j.permissions||{};
+j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
+j.permissions.deny=[...new Set([...(j.permissions.deny||[]), ...n.permissions.deny])];
+fs.writeFileSync(f, JSON.stringify(j,null,2));' "$CS" "$HS"; then MERGED=1
+elif [ -n "$PY" ] && "$PY" - "$CS" "$HS" <<'PYEOF'
+import json, sys
+f, h = sys.argv[1], sys.argv[2]
+try: j = json.load(open(f))
+except Exception: j = {}
+n = json.load(open(h))
+j.setdefault("env", {}).update(n["env"]); p = j.setdefault("permissions", {})
+p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
+p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
+json.dump(j, open(f, "w"), indent=2)
+PYEOF
+then MERGED=1; fi
+[ "$MERGED" = 1 ] || cp "$HS" "$CS"
+chmod 600 "$CS"; rm -f "$HS"
 umask 022
-cat > "$DIR/CLAUDE.md" <<'MD'
+rm -f "$DIR/.claude/settings.local.json" "$DIR/CLAUDE.md"   # old per-folder copies from earlier setups
+# Rules for every folder: ~/.claude/CLAUDE.md (the student's own notes in that file are kept)
+CM="$HOME/.claude/CLAUDE.md"; touch "$CM"
+sed -i '' '/<!-- >>> hackathon rules >>> -->/,/<!-- <<< hackathon rules <<< -->/d' "$CM"
+cat >> "$CM" <<'MD'
+<!-- >>> hackathon rules >>> -->
 # Hackathon rules for the assistant
-- Only create and edit files inside this folder. Never touch files outside it.
+- Work in the folder Claude was started in. Create and edit files only inside it. Never change or delete files outside it.
+- If you were started in the home folder, Desktop, Documents or Downloads itself, first make a new folder for the project (e.g. bakery/) and work inside it.
+- The user's own files (photos, PDFs, logos) may be in another folder. If you can't find a file they mention, say in one line: "Drag the file into this window and press Enter", then copy it into the project's assets/ folder. You may read and copy files from anywhere into the project folder.
+- If something is still missing (e.g. a photo), use a placeholder, finish the page, and say in one line how to add the real one later.
+- Finish the task, then stop. Don't end with a list of options or "What do you want next?". At most, suggest one next step in one line.
 - Never run commands that delete folders, change system settings, or install software globally. Ask first if unsure.
 - Keep answers short. Make small changes, then show the result.
 - Build with plain HTML/CSS/JS unless the user asks for a framework. No build step, no server.
 - Use the ui-ux-pro-max skill for design choices (styles, colours, fonts) if it is installed. On Windows, if python3 fails, use python.
-- Put every project in its own subfolder (e.g. bakery/, habit-app/) with index.html at the top of that subfolder.
+- Put every project in its own folder with index.html at the top of that folder.
 - Use relative paths only (e.g. about.html, images/logo.png). Never use C:\ or /Users/ paths.
 - Save app data in the browser (localStorage). No databases or backend.
 - To show a project, open its index.html in the user's browser.
-- To publish a project when asked: work ONLY inside that project's subfolder. Run git init -b main, git add ., git commit, then gh repo create <subfolder-name> --public --source=. --push, then enable GitHub Pages with: gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/" . Give the user the link https://<owner>.github.io/<repo>/ (it can take 2 minutes to go live).
-- Never run git init in the main claude-hackathon folder, never commit or upload the .claude folder, never force-push, never delete repositories.
+- To publish a project when asked: work ONLY inside that project's folder. Run git init -b main, git add ., git commit, then gh repo create <folder-name> --public --source=. --push, then enable GitHub Pages with: gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/" . Give the user the link https://<owner>.github.io/<repo>/ (it can take 2 minutes to go live).
+- Never run git init in the home folder, Desktop, Documents, Downloads or the claude-hackathon folder itself. Never commit or upload .claude folders, API keys or setup-log.txt. Never force-push, never delete repositories.
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
+<!-- <<< hackathon rules <<< -->
 MD
 printf '.claude/\nsetup-log.txt\n' > "$DIR/.gitignore"
 # Skip Claude's first-run screens (login + "do you trust this folder?")
@@ -431,7 +469,7 @@ for RC in "$HOME/.zshrc" "$HOME/.bash_profile"; do
   cat >> "$RC" <<RCEOF
 # >>> hackathon claude >>>
 export PATH="\$HOME/.local/bin:\$PATH"
-claude() { ( cd "\$HOME/claude-hackathon" && PATH="\$HOME/.local/hackathon-tools/bin:\$HOME/.local/bin:$BREWBIN\$PATH" command claude "\$@" ); }
+claude() { ( [ "\$PWD" = "\$HOME" ] && cd "\$HOME/claude-hackathon"; printf '\\033[1;30;106m Claude is working in: %s  (to use a photo or PDF from another folder, drag it into this window) \\033[0m\\n' "\$PWD"; PATH="\$HOME/.local/hackathon-tools/bin:\$HOME/.local/bin:$BREWBIN\$PATH" command claude "\$@" ); }
 # <<< hackathon claude <<<
 RCEOF
 done
@@ -514,12 +552,12 @@ ALL=1
 [ -n "$GIT" ] && ok "Git" || { bad "Git (T1)"; ALL=0; }
 [ -n "$GH" ] && ok "GitHub tool" || { bad "GitHub tool (T2)"; ALL=0; }
 "$CLAUDE" --version >/dev/null 2>&1 && ok "Claude Code $("$CLAUDE" --version | awk '{print $1}')" || { bad "Claude Code (C1)"; ALL=0; }
-[ -f "$DIR/.claude/settings.local.json" ] && ok "Your settings" || { bad "Your settings (run setup)"; ALL=0; }
+grep -q '"ANTHROPIC_AUTH_TOKEN": *"sk-or-' "$HOME/.claude/settings.json" 2>/dev/null && ok "Your settings (work in every folder)" || { bad "Your settings (run setup)"; ALL=0; }
 [ "$CL_OK" = 1 ] && ok "The AI works" || { bad "The AI (${CL_CODE:-not tested})"; ALL=0; }
 [ -n "$GH_USER" ] && ok "GitHub account: ${B}$GH_USER${N}  (not you? run  gh auth logout  then run setup again)" || { bad "GitHub not connected (G1)"; ALL=0; }
 [ -n "$NODE" ] && ok "Node.js" || warn "Node.js not installed (optional)"
 [ -n "$PY" ] && ok "Python" || warn "Python not installed (optional)"
-[ -f "$DIR/.claude/skills/ui-ux-pro-max/SKILL.md" ] && ok "Design skills (UI/UX Pro Max)" || warn "Design skill not installed (optional)"
+[ -f "$HOME/.claude/skills/ui-ux-pro-max/SKILL.md" ] && ok "Design skills (UI/UX Pro Max)" || warn "Design skill not installed (optional)"
 
 echo ""
 if [ "$ALL" = 1 ]; then
@@ -534,6 +572,10 @@ if [ "$ALL" = 1 ]; then
     echo "  1. Quit Terminal (press Cmd + Q)."
     echo "  2. Open Terminal again."
     echo "  3. Type  claude  and press Return."
+    echo ""
+    echo "Your key works in every folder. In a new Terminal, claude starts in ~/claude-hackathon."
+    echo "To work somewhere else, go to that folder first (e.g.  cd Desktop/my-site ), then type  claude"
+    echo "If Claude asks 'Do you trust the files in this folder?', press Enter."
   fi
   FAILED=1; sleep 1; exit 0
 fi
