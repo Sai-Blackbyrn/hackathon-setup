@@ -21,9 +21,23 @@ if [ -x /opt/homebrew/bin/brew ]; then BREW=/opt/homebrew/bin/brew; else BREW=/u
 eval "$($BREW shellenv)"
 grep -q "brew shellenv" "$HOME/.zprofile" 2>/dev/null || echo "eval \"\$($BREW shellenv)\"" >> "$HOME/.zprofile"
 
-# 3. Git, GitHub CLI, Node.js, Python
+# 2b. Homebrew installed by another Mac user? Take ownership so installs don't fail.
+BREW_PREFIX="$($BREW --prefix)"
+if [ ! -w "$BREW_PREFIX" ] || [ -n "$(find "$BREW_PREFIX" -maxdepth 3 -type d ! -perm -u+w -print -quit 2>/dev/null)" ] \
+   || [ -n "$(find "$BREW_PREFIX" -maxdepth 3 ! -user "$(whoami)" -print -quit 2>/dev/null)" ]; then
+  echo "Homebrew belongs to another user on this Mac. Fixing permissions: type your Mac login password if asked (it won't show)..."
+  sudo chown -R "$(whoami)" "$BREW_PREFIX" < /dev/tty || { echo "Could not fix Homebrew permissions. This Mac account must be an administrator: log in to an admin account and run the setup there."; exit 1; }
+  chmod -R u+w "$BREW_PREFIX"
+fi
+
+# 3. Git, GitHub CLI, Node.js, Python (only the missing ones; nothing already installed is upgraded)
 echo "Installing Git, GitHub CLI, Node.js and Python..."
-brew install git gh node python@3.12
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 HOMEBREW_NO_ENV_HINTS=1
+MISSING=""
+for pkg in git gh node python@3.12; do
+  brew list --formula "$pkg" >/dev/null 2>&1 || MISSING="$MISSING $pkg"
+done
+if [ -n "$MISSING" ]; then brew install $MISSING; else echo "Already installed."; fi
 
 # 4. Claude Code (official native installer)
 if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
