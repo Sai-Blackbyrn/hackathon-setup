@@ -35,6 +35,15 @@ $SetupCmd = 'irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup
 $HelpChat = 'https://chat.aishifttraining.com'
 $Mode = 'install'; if ($env:HACK_CHECK -eq '1') { $Mode = 'check' }
 Remove-Item Env:HACK_CHECK -ErrorAction SilentlyContinue
+# Group (girls / boys) comes from the command in the student's email; it is remembered for re-runs.
+$GroupFile = "$env:USERPROFILE\.claude\hackathon-group"
+$Group = ("$env:HACK_GROUP").Trim().ToLower()
+Remove-Item Env:HACK_GROUP -ErrorAction SilentlyContinue
+if ($Group -notin @('girls','boys') -and (Test-Path $GroupFile)) { $Group = ((Get-Content $GroupFile -ErrorAction SilentlyContinue | Select-Object -First 1) + '').Trim().ToLower() }
+if ($Group -in @('girls','boys')) {
+  $Model = "@preset/hackathon-$Group"
+  $SetupCmd = "`$env:HACK_GROUP='$Group'; irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex"
+} else { $Group = '' }
 $script:Step = 'starting'
 $Notes = @()
 
@@ -445,7 +454,7 @@ if ($GitBash) { $envBlock.CLAUDE_CODE_GIT_BASH_PATH = $GitBash }
 $picker = [ordered]@{
   replaceBuiltInOptions = $true
   options = @(
-    [ordered]@{ model = '@preset/hackathon-primary'; label = 'Primary (recommended)'; description = 'Use this for everything' },
+    [ordered]@{ model = $Model; label = 'Primary (recommended)'; description = 'Use this for everything' },
     [ordered]@{ model = 'openai/gpt-5.6-terra'; label = 'GPT-5.6 Terra'; description = 'Second choice' },
     [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Second choice. Uses credit fastest' }
   )
@@ -560,7 +569,8 @@ try {
     Set-Content -Path $prof -Value ($old.TrimEnd() + "`r`n`r`n" + $block + "`r`n") -Encoding UTF8 -NoNewline -ErrorAction Stop
   }
 } catch { NOTE "Typing claude still works through the shortcut file." }
-OK "Settings saved"
+if ($Group) { New-Item -ItemType Directory -Force -Path (Split-Path $GroupFile) | Out-Null; [IO.File]::WriteAllText($GroupFile, $Group) }
+OK "Settings saved$(if ($Group) { " (group: $Group)" })"
 
 }  # end of install-only steps
 
