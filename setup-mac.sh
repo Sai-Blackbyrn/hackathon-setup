@@ -28,20 +28,23 @@ LOG="$DIR/setup-log.txt"
 MODE="install"; [ "${1:-}" = "--check" ] && MODE="check"
 STEP="starting"; FAILED=0
 
-G=$'\033[32m'; R=$'\033[31m'; Y=$'\033[33m'; C=$'\033[36m'; B=$'\033[1m'; N=$'\033[0m'
-ok()   { printf "  ${G}OK${N}   %s\n" "$1"; }
-bad()  { printf "  ${R}FAIL${N} %s\n" "$1"; }
-warn() { printf "  ${Y}NOTE${N} %s\n" "$1"; }
-say()  { printf "\n${C}%s${N}\n" "$1"; }
+G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[1m'; N=$'\033[0m'
+# Colour key: installing = bold cyan, "do this now" = black on yellow, errors = white on red, fixes = bold yellow
+TAG_FAIL=$'\033[1;97;41m'; FIX=$'\033[1;93m'; INST=$'\033[1;96m'; ACT=$'\033[1;30;103m'; OKC=$'\033[1;92m'; TAG_WARN=$'\033[1;30;43m'
+ok()   { printf "  ${OKC}OK${N}   %s\n" "$1"; }
+bad()  { printf "  ${TAG_FAIL} FAIL ${N} %s\n" "$1"; }
+warn() { printf "  ${Y}${B}NOTE${N} %s\n" "$1"; }
+say()  { printf "\n${INST}>> %s${N}\n" "$1"; }            # installation / progress messages
+act()  { printf "${ACT} %s ${N}\n" "$1"; }                  # something the student must do now
 fail() {  # fail CODE "what to do"
   FAILED=1
-  printf "\n${R}${B}FAIL %s${N}\n${B}%s${N}\n\n" "$1" "$2"
+  printf "\n${TAG_FAIL} FAIL %s ${N}\n${FIX}%s${N}\n\n" "$1" "$2"
   printf "Take a screenshot of this window and send it to the help group.\n"
   printf "If you can, also send this file: claude-hackathon/setup-log.txt\n"
   sleep 1; exit 1
 }
 # Unexpected stop (closed lid, Ctrl+C, a crash): still tell the student what to do.
-trap 'st=$?; if [ $st -ne 0 ] && [ "$FAILED" = 0 ]; then printf "\n${R}${B}FAIL X1${N}\n${B}Setup stopped during: %s. Run the same command again. It continues where it stopped.${N}\nIf it stops again, send a screenshot of this window to the help group.\n" "$STEP"; fi' EXIT
+trap 'st=$?; if [ $st -ne 0 ] && [ "$FAILED" = 0 ]; then printf "\n${TAG_FAIL} FAIL X1 ${N}\n${FIX}Setup stopped during: %s. Run the same command again. It continues where it stopped.${N}\nIf it stops again, send a screenshot of this window to the help group.\n" "$STEP"; fi' EXIT
 
 mkdir -p "$DIR" || fail P8 "Setup could not create the folder claude-hackathon in your home folder. Restart the Mac and run the command again."
 
@@ -112,7 +115,8 @@ check_tools() {
 read_key() {
   if [ -n "${HACKATHON_KEY:-}" ]; then KEY="$HACKATHON_KEY"
   else
-    printf "Paste your personal hackathon key (starts with sk-or-).\nPaste with Cmd + V, then press Return. Nothing shows while you paste. That's normal.\nKey: "
+    act "Paste your personal hackathon key (starts with sk-or-). Press Cmd + V, then Return."
+    printf "${FIX}Nothing shows while you paste. That's normal.${N}\nKey: "
     IFS= read -rs KEY < /dev/tty; echo
   fi
   KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
@@ -132,7 +136,8 @@ STEP="reading your key"
 if [ "$MODE" = "check" ]; then
   KEY="$(existing_key)"
   if [ -z "$KEY" ]; then
-    printf "No key found on this Mac yet. Paste your key to test it, or just press Return to skip.\nKey: "
+    act "No key found on this Mac yet. Paste your key to test it, or just press Return to skip."
+    printf "Key: "
     IFS= read -rs KEY < /dev/tty; echo; KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
   fi
 else
@@ -153,7 +158,7 @@ STEP="checking your Mac"
 say "Checking your Mac..."
 PROBLEMS=""
 add_problem() { PROBLEMS="$PROBLEMS
-${R}${B}FAIL $1${N}  $2"; }
+${TAG_FAIL} FAIL $1 ${N} ${FIX}$2${N}"; }
 
 MACOS="$(sw_vers -productVersion 2>/dev/null)"
 if [ "${MACOS%%.*}" -ge "$MIN_MACOS" ] 2>/dev/null; then ok "macOS $MACOS"
@@ -222,7 +227,7 @@ if [ -n "$PROBLEMS" ]; then
   printf "\n${B}Fix these, then run the same command again:${N}%s\n" "$PROBLEMS"
   if [ "$MODE" = "install" ]; then
     FAILED=1
-    printf "\nSetup stopped before installing anything. Take a screenshot of this window and send it to the help group if you need help.\n"
+    printf "\n${FIX}Setup stopped before installing anything. Fix the items above.${N} Take a screenshot of this window and send it to the help group if you need help.\n"
     sleep 1; exit 1
   fi
 fi
@@ -235,16 +240,17 @@ NEED_SUDO=0
 [ -z "$BREW" ] && NEED_SUDO=1
 if [ -n "$BREW" ] && [ -n "$NEED" ] && ! brew_writable; then
   STEP="taking over Homebrew"
-  printf "\n${Y}${B}Homebrew on this Mac was installed by another Mac account ('%s').${N}\n" "$BREW_OWNER"
+  printf "\n${TAG_WARN} Homebrew on this Mac was installed by another Mac account ('%s'). ${N}\n" "$BREW_OWNER"
   printf "Setup needs to take it over to add:%s\nAfter this, the account '%s' will not be able to update Homebrew until it runs the same fix.\n" " $NEED" "$BREW_OWNER"
-  printf "Type YES and press Return to continue (anything else stops): "
+  printf "${ACT} Type YES and press Return to continue (anything else stops): ${N} "
   IFS= read -r ANS < /dev/tty
   [ "$ANS" = "YES" ] || [ "$ANS" = "yes" ] || fail H2 "You chose not to take over Homebrew. Log in to the Mac account '$BREW_OWNER' and run the command there, or run it again and type YES."
   NEED_SUDO=2
 fi
 if [ "$NEED_SUDO" != 0 ]; then
   STEP="asking for your Mac password"
-  say "Type your Mac login password and press Return. Nothing shows while you type. That's normal."
+  echo ""; act "Type your Mac login password and press Return."
+  printf "${FIX}Nothing shows while you type. That's normal.${N}\n"
   if ! sudo -v < /dev/tty; then
     fail H3 "Your Mac password was not accepted. Use the password you log in to this Mac with. If this account has no password, set one in System Settings > Users & Groups, then run the command again."
   fi
@@ -261,7 +267,7 @@ fi
 if [ -z "$BREW" ]; then
   STEP="installing Homebrew"
   say "Installing Homebrew and Apple's developer tools."
-  echo "On a new Mac this downloads a lot and can take 10-30 minutes. Keep this window open, even if it looks stuck."
+  act "On a new Mac this can take 10-30 minutes. Keep this window open, even if it looks stuck."
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/null
   find_brew
   [ -n "$BREW" ] || fail H1 "Homebrew did not install. Check your internet (try a phone hotspot) and run the command again. If this Mac is managed by a school or company, use your own laptop."
@@ -419,7 +425,7 @@ if [ "$ALL" = 1 ] || "$CLAUDE" --version >/dev/null 2>&1; then
     OUT="$(grep -v 'unrecognized_model' "$T")"; rm -f "$T"
     if printf '%s' "$OUT" | grep -q "SETUP OK"; then CL_OK=1; break; fi
     if printf '%s' "$OUT" | grep -Eqi '429|rate.?limit|too many requests|overloaded' && [ $attempt = 1 ]; then
-      echo "  The AI service is busy. Trying again in 30 seconds..."; sleep 30; continue
+      printf "  ${FIX}The AI service is busy. Trying again in 30 seconds...${N}\n"; sleep 30; continue
     fi
     break
   done
@@ -442,8 +448,8 @@ if [ -n "${GH:-}" ]; then
   if ! "$GH" auth status >/dev/null 2>&1 && [ "$MODE" = "install" ]; then
     STEP="logging in to GitHub"
     say "Now log in to GitHub."
-    echo "1. Press Return when asked. Your browser opens."
-    echo "2. Copy the 8-character code shown here, paste it in the browser, and click Authorize."
+    act "1. Press Return when asked. Your browser opens."
+    act "2. Copy the 8-character code shown here, paste it in the browser, and click Authorize."
     "$GH" auth login -h github.com -p https -w < /dev/tty || true
   fi
   if "$GH" auth status >/dev/null 2>&1; then
@@ -469,7 +475,7 @@ if [ "$ALL" = 1 ] && [ "$CL_OK" = 1 ]; then
   FAILED=1; sleep 1; exit 0   # FAILED=1 only silences the X1 message
 fi
 if [ "$MODE" = "check" ]; then
-  printf "${Y}${B}CHECK DONE${N} - items marked FAIL above are not ready. Run the setup command to fix them,\nor send this screenshot to the help group.\n"
+  printf "${TAG_WARN} CHECK DONE ${N} ${FIX}Items marked FAIL above are not ready. Run the setup command to fix them,\nor send this screenshot to the help group.\n"
   FAILED=1; sleep 1; exit 0
 fi
 if [ "${CL_CODE:-}" != "" ] && [ "$CL_OK" = 0 ]; then fail "$CL_CODE" "$CL_MSG"; fi
