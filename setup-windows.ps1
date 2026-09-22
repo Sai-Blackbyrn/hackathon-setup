@@ -170,9 +170,10 @@ else {
 # ---------- STEP 1: key ----------
 $script:Step = 'reading your key'
 $Key = ''
-$SettingsFile = "$Dir\.claude\settings.local.json"
+$SettingsFile = "$env:USERPROFILE\.claude\settings.json"     # user settings: key + rules work in every folder
+$OldSettings = "$Dir\.claude\settings.local.json"
 if ($Mode -eq 'check') {
-  if (Test-Path $SettingsFile) { try { $Key = ((Get-Content $SettingsFile -Raw | ConvertFrom-Json).env.ANTHROPIC_AUTH_TOKEN) } catch {} }
+  foreach ($sf in @($SettingsFile, $OldSettings)) { if (-not $Key -and (Test-Path $sf)) { try { $Key = ((Get-Content $sf -Raw | ConvertFrom-Json).env.ANTHROPIC_AUTH_TOKEN) } catch {} } }
   if (-not $Key) {
     ACT "No key found yet. Paste your key to test it (right-click), or just press Enter to skip."
     $sec = Read-Host "Key" -AsSecureString
@@ -402,8 +403,8 @@ $ErrorActionPreference = 'Continue'
 # ---------- STEP 7: design skill (nice to have) ----------
 $script:Step = 'installing the design skill'
 STEPH '7 of 9' 'Design skill (about 1 minute)'
-$HasSkill = { Test-Path "$Dir\.claude\skills\ui-ux-pro-max\SKILL.md" }
-if (Test-Path "$Dir\.claude\skills\design-system\SKILL.md") { OK "Design skill is already installed. Skipping this step." }
+$HasSkill = { Test-Path "$env:USERPROFILE\.claude\skills\ui-ux-pro-max\SKILL.md" }
+if (Test-Path "$env:USERPROFILE\.claude\skills\design-system\SKILL.md") { OK "Design skill is already installed. Skipping this step." }
 elseif (-not (Test-Tools).node) { SKIP "Design skill skipped (it needs Node.js). Claude Code still works." }
 else {
   INST "Installing the design skill..."
@@ -413,10 +414,11 @@ else {
     $uipro = "$Tools\npm\uipro.cmd"
     if (-not (Test-Path $uipro)) { return $false }
     Push-Location $Dir
-    & $uipro init --ai claude --force --offline | Out-Host
+    & $uipro init --ai claude --global --force --offline | Out-Host
     $ErrorActionPreference = 'Continue'
-    if (-not (& $HasSkill)) { & $uipro init --ai claude --force | Out-Host; $ErrorActionPreference = 'Continue' }
+    if (-not (& $HasSkill)) { & $uipro init --ai claude --global --force | Out-Host; $ErrorActionPreference = 'Continue' }
     Pop-Location
+    if (& $HasSkill) { Remove-Item "$Dir\.claude\skills" -Recurse -Force -ErrorAction SilentlyContinue }   # old per-folder copy
     return (& $HasSkill)
   }
   if ($okSkill) { OK "Design skill installed" } else { SKIP "The design skill did not install. Setup continues without it. Claude Code still works." }
@@ -454,24 +456,50 @@ $settings = [ordered]@{
   }
 }
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
-[IO.File]::WriteAllText($SettingsFile, ($settings | ConvertTo-Json -Depth 10), $Utf8)
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
+$cur = $null
+if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw).Trim().Length -gt 2)) {
+  Copy-Item $SettingsFile "$SettingsFile.hackathon-backup" -Force -ErrorAction SilentlyContinue
+  try { $cur = Get-Content $SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $cur = $null }
+}
+if ($cur) {   # keep everything the student already had; add or replace only the hackathon parts
+  if (-not $cur.env) { $cur | Add-Member -NotePropertyName env -NotePropertyValue (New-Object PSObject) -Force }
+  foreach ($k in $envBlock.Keys) { $cur.env | Add-Member -NotePropertyName $k -NotePropertyValue $envBlock[$k] -Force }
+  if (-not $cur.permissions) { $cur | Add-Member -NotePropertyName permissions -NotePropertyValue (New-Object PSObject) -Force }
+  $cur.permissions | Add-Member -NotePropertyName disableBypassPermissionsMode -NotePropertyValue 'disable' -Force
+  $deny = @(@($cur.permissions.deny) + $settings.permissions.deny | Where-Object { $_ } | Select-Object -Unique)
+  $cur.permissions | Add-Member -NotePropertyName deny -NotePropertyValue $deny -Force
+  [IO.File]::WriteAllText($SettingsFile, ($cur | ConvertTo-Json -Depth 20), $Utf8)
+} else {
+  [IO.File]::WriteAllText($SettingsFile, ($settings | ConvertTo-Json -Depth 10), $Utf8)
+}
+Remove-Item $OldSettings, "$Dir\CLAUDE.md" -Force -ErrorAction SilentlyContinue   # old per-folder copies
 $md = @'
+<!-- >>> hackathon rules >>> -->
 # Hackathon rules for the assistant
-- Only create and edit files inside this folder. Never touch files outside it.
+- Work in the folder Claude was started in. Create and edit files only inside it. Never change or delete files outside it.
+- If you were started in the home folder, Desktop, Documents or Downloads itself, first make a new folder for the project (e.g. bakery/) and work inside it.
+- The user's own files (photos, PDFs, logos) may be in another folder. If you can't find a file they mention, say in one line: "Drag the file into this window and press Enter", then copy it into the project's assets/ folder. You may read and copy files from anywhere into the project folder.
+- If something is still missing (e.g. a photo), use a placeholder, finish the page, and say in one line how to add the real one later.
+- Finish the task, then stop. Don't end with a list of options or "What do you want next?". At most, suggest one next step in one line.
 - Never run commands that delete folders, change system settings, or install software globally. Ask first if unsure.
 - Keep answers short. Make small changes, then show the result.
 - Build with plain HTML/CSS/JS unless the user asks for a framework. No build step, no server.
 - Use the ui-ux-pro-max skill for design choices (styles, colours, fonts) if it is installed. On Windows, if python3 fails, use python.
-- Put every project in its own subfolder (e.g. bakery/, habit-app/) with index.html at the top of that subfolder.
+- Put every project in its own folder with index.html at the top of that folder.
 - Use relative paths only (e.g. about.html, images/logo.png). Never use C:\ or /Users/ paths.
 - Save app data in the browser (localStorage). No databases or backend.
 - To show a project, open its index.html in the user's browser.
-- To publish a project when asked: work ONLY inside that project's subfolder. Run git init -b main, git add ., git commit, then gh repo create <subfolder-name> --public --source=. --push, then enable GitHub Pages with: gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/" . Give the user the link https://<owner>.github.io/<repo>/ (it can take 2 minutes to go live).
-- Never run git init in the main claude-hackathon folder, never commit or upload the .claude folder, never force-push, never delete repositories.
+- To publish a project when asked: work ONLY inside that project's folder. Run git init -b main, git add ., git commit, then gh repo create <folder-name> --public --source=. --push, then enable GitHub Pages with: gh api -X POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/" . Give the user the link https://<owner>.github.io/<repo>/ (it can take 2 minutes to go live).
+- Never run git init in the home folder, Desktop, Documents, Downloads or the claude-hackathon folder itself. Never commit or upload .claude folders, API keys or setup-log.txt. Never force-push, never delete repositories.
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
+<!-- <<< hackathon rules <<< -->
 '@
-[IO.File]::WriteAllText("$Dir\CLAUDE.md", $md, $Utf8)
+$CM = "$env:USERPROFILE\.claude\CLAUDE.md"
+$oldCm = ''; if (Test-Path $CM) { $oldCm = [string](Get-Content $CM -Raw -Encoding UTF8) }
+$oldCm = [regex]::Replace($oldCm, '(?s)\r?\n?<!-- >>> hackathon rules >>> -->.*?<!-- <<< hackathon rules <<< -->\r?\n?', '')
+[IO.File]::WriteAllText($CM, ($(if ($oldCm.Trim()) { $oldCm.TrimEnd() + "`n`n" } else { '' }) + $md), $Utf8)
 [IO.File]::WriteAllText("$Dir\.gitignore", ".claude/`nsetup-log.txt`n.tmp/`n", $Utf8)
 
 # Skip Claude's first-run screens (login + "do you trust this folder?")
@@ -491,7 +519,7 @@ try {
   [IO.File]::WriteAllText($F, ($j | ConvertTo-Json -Depth 100), $Utf8)
 } catch { NOTE "If Claude asks 'Do you trust the files in this folder?', press Enter." }
 
-# Typing "claude" anywhere opens the hackathon folder with the hackathon tools.
+# Typing "claude" works in the current folder (a plain new PowerShell window starts in the hackathon folder).
 # The .cmd file must only contain plain letters, so the user's folders are written as %VARIABLES%.
 function To-Cmd($p) { if (-not $p) { return '' }; return (($p -replace [regex]::Escape($env:LOCALAPPDATA), '%LOCALAPPDATA%') -replace [regex]::Escape($env:USERPROFILE), '%USERPROFILE%') }
 $pyDir = Find-PythonDir
@@ -499,7 +527,7 @@ $shimPath = @("$Tools\git\cmd", "$Tools\gh\bin", "$Tools\node", "$Tools\npm") + 
 $shimLines = @('@echo off', "set `"PATH=$($shimPath -join ';');%PATH%`"")
 if ($GitBash) { $shimLines += "set `"CLAUDE_CODE_GIT_BASH_PATH=$(To-Cmd $GitBash)`"" }
 if ($ProfileUnsafe) { $shimLines += "set `"TEMP=$Dir\.tmp`"", "set `"TMP=$Dir\.tmp`"" }
-$shimLines += "cd /d `"$(To-Cmd $Dir)`"", '"%USERPROFILE%\.local\bin\claude.exe" %*'
+$shimLines += "if /i `"%CD%`"==`"%USERPROFILE%`" cd /d `"$(To-Cmd $Dir)`"", "if /i `"%CD%`"==`"%SystemRoot%\system32`" cd /d `"$(To-Cmd $Dir)`"", 'echo Claude is working in: %CD%', 'echo To use a photo or PDF from another folder, drag it into this window.', '"%USERPROFILE%\.local\bin\claude.exe" %*'
 New-Item -ItemType Directory -Force -Path $Shim | Out-Null
 [IO.File]::WriteAllText("$Shim\claude.cmd", (($shimLines -join "`r`n") + "`r`n"), (New-Object System.Text.ASCIIEncoding))
 $userPath = [Environment]::GetEnvironmentVariable('Path','User')
@@ -599,12 +627,12 @@ $All = $true
 if ($tools.git) { OK "Git" } else { BAD "Git (T1)"; $All = $false }
 if ($tools.gh)  { OK "GitHub tool" } else { BAD "GitHub tool (T2)"; $All = $false }
 if ($ccv) { OK "Claude Code $ccv" } else { BAD "Claude Code (C1)"; $All = $false }
-if (Test-Path $SettingsFile) { OK "Your settings" } else { BAD "Your settings (run setup)"; $All = $false }
+if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw) -match '"ANTHROPIC_AUTH_TOKEN":\s*"sk-or-')) { OK "Your settings (work in every folder)" } else { BAD "Your settings (run setup)"; $All = $false }
 if ($ClOK) { OK "The AI works" } else { BAD "The AI ($(if ($ClCode) { $ClCode } else { 'not tested' }))"; $All = $false }
 if ($GhUser) { OK "GitHub account: $GhUser  (not you? run  gh auth logout  then run setup again)" } else { BAD "GitHub not connected (G1)"; $All = $false }
 if ($tools.node)   { OK "Node.js" } else { NOTE "Node.js not installed (optional)" }
 if ($tools.python) { OK "Python" } else { NOTE "Python not installed (optional)" }
-if (Test-Path "$Dir\.claude\skills\ui-ux-pro-max\SKILL.md") { OK "Design skills (UI/UX Pro Max)" } else { NOTE "Design skill not installed (optional)" }
+if (Test-Path "$env:USERPROFILE\.claude\skills\ui-ux-pro-max\SKILL.md") { OK "Design skills (UI/UX Pro Max)" } else { NOTE "Design skill not installed (optional)" }
 
 Write-Host ""
 if ($All) {
@@ -620,6 +648,10 @@ if ($All) {
     Write-Host "  1. Close ALL PowerShell windows."
     Write-Host "  2. Open PowerShell again (Windows key, type PowerShell, Enter)."
     Write-Host "  3. Type  claude  and press Enter."
+    Write-Host ""
+    Write-Host "Your key works in every folder. In a new PowerShell window, claude starts in: $Dir"
+    Write-Host "To work somewhere else, go to that folder first (e.g.  cd Desktop\my-site ), then type  claude"
+    Write-Host "If Claude asks 'Do you trust the files in this folder?', press Enter."
   }
   return
 }
