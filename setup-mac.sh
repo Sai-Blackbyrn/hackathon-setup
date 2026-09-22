@@ -23,7 +23,7 @@ UIPRO_VERSION="2.15.0"   # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.
 GH_VERSION="2.101.0"     # GitHub CLI
 UV_VERSION="0.12.17"     # uv (installs Python)
 NODE_LINE="latest-v22.x" # Node.js 22 LTS
-MODEL="openai/gpt-5-mini"                # default model (students can switch with /model)
+MODEL="@preset/hackathon-primary"        # primary model = OpenRouter preset (change the model in the preset, not here)
 FAST_MODEL="openai/gpt-5-mini"           # small background jobs and helpers
 MIN_MACOS=13; MIN_NODE=18; MIN_GH="2.40.0"; MIN_DISK_GB=5
 
@@ -390,11 +390,9 @@ cat > "$HS" <<JSON
   "modelPicker": {
     "replaceBuiltInOptions": true,
     "options": [
-      { "model": "openai/gpt-5-mini", "label": "GPT-5 mini", "description": "Default. Fast and cheapest" },
-      { "model": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "description": "Most Claude-like. Good for building sites" },
-      { "model": "anthropic/claude-sonnet-5", "label": "Claude Sonnet 5", "description": "Best results. Uses credit fast" },
-      { "model": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra", "description": "Stronger. Uses more credit" },
-      { "model": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol", "description": "Strongest. Uses credit fastest" }
+      { "model": "@preset/hackathon-primary", "label": "Primary (recommended)", "description": "Use this for everything" },
+      { "model": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra", "description": "Second choice" },
+      { "model": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol", "description": "Second choice. Uses credit fastest" }
     ]
   },
   "permissions": {
@@ -415,7 +413,7 @@ const fs=require("fs"), f=process.argv[1], h=process.argv[2];
 let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
 const n=JSON.parse(fs.readFileSync(h,"utf8"));
 j.env=Object.assign({}, j.env, n.env); delete j.env.ANTHROPIC_MODEL;
-if (!j.model) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
+const ok=n.modelPicker.options.map(o=>o.model); if (!ok.includes(j.model)) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
 j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
 j.permissions.deny=[...new Set([...(j.permissions.deny||[]), ...n.permissions.deny])];
 fs.writeFileSync(f, JSON.stringify(j,null,2));' "$CS" "$HS"; then MERGED=1
@@ -426,7 +424,9 @@ try: j = json.load(open(f))
 except Exception: j = {}
 n = json.load(open(h))
 j.setdefault("env", {}).update(n["env"]); j["env"].pop("ANTHROPIC_MODEL", None)
-j.setdefault("model", n["model"]); j["modelPicker"] = n["modelPicker"]; p = j.setdefault("permissions", {})
+ok = [o["model"] for o in n["modelPicker"]["options"]]
+if j.get("model") not in ok: j["model"] = n["model"]
+j["modelPicker"] = n["modelPicker"] p = j.setdefault("permissions", {})
 p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
 p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
 json.dump(j, open(f, "w"), indent=2)
