@@ -19,7 +19,7 @@ set -u
 
 # ---------- Pinned versions (tested for this event) ----------
 CC_VERSION="2.1.278"     # Claude Code
-UIPRO_VERSION="2.2.3"    # uipro-cli (design skill)
+UIPRO_VERSION="2.15.0"   # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.cc)
 GH_VERSION="2.101.0"     # GitHub CLI
 UV_VERSION="0.12.17"     # uv (installs Python)
 NODE_LINE="latest-v22.x" # Node.js 22 LTS
@@ -36,15 +36,17 @@ MODE="install"; [ "${1:-}" = "--check" ] && MODE="check"
 STEP="starting"; FAILED=0; NOTES=""
 
 # ---------- Colours ----------
-# installing = bold cyan | do this now = black on yellow | error = white on red | fix = bold yellow
-G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[1m'; N=$'\033[0m'
-TAG_FAIL=$'\033[1;97;41m'; FIX=$'\033[1;93m'; INST=$'\033[1;96m'; ACT=$'\033[1;30;103m'; OKC=$'\033[1;92m'; TAG_WARN=$'\033[1;30;43m'; DONE=$'\033[1;30;42m'
+# Every colour works on light AND dark Terminal backgrounds (important messages use a coloured box):
+# step titles = white on blue | do this now = black on yellow | tips & fixes = black on light blue
+# errors = white on red | progress = bold | OK = green
+G=$'\033[1;32m'; B=$'\033[1m'; N=$'\033[0m'
+TAG_FAIL=$'\033[1;97;41m'; FIX=$'\033[1;30;106m'; INST=$'\033[1m'; STEPC=$'\033[1;97;44m'; ACT=$'\033[1;30;103m'; OKC=$'\033[1;32m'; TAG_WARN=$'\033[1;30;43m'; DONE=$'\033[1;30;42m'
 ok()    { printf "  ${OKC}OK${N}   %s\n" "$1"; }
 bad()   { printf "  ${TAG_FAIL} FAIL ${N} %s\n" "$1"; }
-warn()  { printf "  ${Y}${B}NOTE${N} %s\n" "$1"; }
+warn()  { printf "  ${TAG_WARN} NOTE ${N} %s\n" "$1"; }
 act()   { printf "${ACT} %s ${N}\n" "$1"; }
-fixmsg(){ printf "${FIX}%s${N}\n" "$1"; }
-step()  { printf "\n${INST}==== STEP %s ====${N}\n${INST}%s${N}\n" "$1" "$2"; }   # step "3 of 9" "Git (about 2 minutes)"
+fixmsg(){ printf "${FIX} %s ${N}\n" "$1"; }
+step()  { printf "\n${STEPC} STEP %s  -  %s ${N}\n" "$1" "$2"; }   # step "3 of 9" "Git (about 2 minutes)"
 note_skip() { NOTES="$NOTES
   - $1"; warn "$1"; }
 show_cmd() { printf "\n${ACT} Copy this line, paste it in Terminal, press Return: ${N}\n\n    %s\n\n" "$1"; }
@@ -348,12 +350,12 @@ fi
 STEP="installing the design skill"
 step "7 of 9" "Design skill (about 1 minute)"
 mkdir -p "$DIR/.claude"
-if find "$DIR/.claude/skills" -name SKILL.md 2>/dev/null | grep -q .; then ok "Design skill is already installed. Skipping this step."
+if [ -f "$DIR/.claude/skills/design-system/SKILL.md" ]; then ok "Design skill is already installed. Skipping this step."
 elif [ -z "$NODE" ]; then note_skip "Design skill skipped (it needs Node.js). Claude Code still works."
 else
-  get_skill() { "$(dirname "$NODE")/npm" install -g --prefix "$HOME/.local" "uipro-cli@$UIPRO_VERSION" --no-fund --no-audit < /dev/null \
-                && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --offline < /dev/null; } ) \
-                && find "$DIR/.claude/skills" -name SKILL.md | grep -q .; }
+  get_skill() { "$(dirname "$NODE")/npm" install -g --prefix "$HOME/.local" "ui-ux-pro-max-cli@$UIPRO_VERSION" --no-fund --no-audit < /dev/null \
+                && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude --force --offline < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --force < /dev/null; } ) \
+                && [ -f "$DIR/.claude/skills/ui-ux-pro-max/SKILL.md" ]; }
   printf "${INST}Installing the design skill...${N}\n"
   retry "Installing the design skill" get_skill && ok "Design skill installed" \
     || note_skip "The design skill did not install. Setup continues without it. Claude Code still works."
@@ -507,7 +509,7 @@ if [ -n "$GH" ]; then
 fi
 
 # ---------- Result ----------
-printf "\n${INST}==== RESULT ====${N}\n"
+printf "\n${STEPC} RESULT ${N}\n"
 ALL=1
 [ -n "$GIT" ] && ok "Git" || { bad "Git (T1)"; ALL=0; }
 [ -n "$GH" ] && ok "GitHub tool" || { bad "GitHub tool (T2)"; ALL=0; }
@@ -517,7 +519,7 @@ ALL=1
 [ -n "$GH_USER" ] && ok "GitHub account: ${B}$GH_USER${N}  (not you? run  gh auth logout  then run setup again)" || { bad "GitHub not connected (G1)"; ALL=0; }
 [ -n "$NODE" ] && ok "Node.js" || warn "Node.js not installed (optional)"
 [ -n "$PY" ] && ok "Python" || warn "Python not installed (optional)"
-find "$DIR/.claude/skills" -name SKILL.md 2>/dev/null | grep -q . && ok "Design skill" || warn "Design skill not installed (optional)"
+[ -f "$DIR/.claude/skills/ui-ux-pro-max/SKILL.md" ] && ok "Design skills (UI/UX Pro Max)" || warn "Design skill not installed (optional)"
 
 echo ""
 if [ "$ALL" = 1 ]; then
