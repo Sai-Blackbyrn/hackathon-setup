@@ -26,7 +26,7 @@ $GhVersion    = '2.101.0'                 # GitHub CLI
 $GitTag       = 'v2.55.0.windows.5'; $GitVer = '2.55.0.5'   # Git for Windows (PortableGit)
 $UvVersion    = '0.12.17'                 # uv (installs Python)
 $NodeLine     = 'latest-v22.x'            # Node.js 22 LTS
-$Model        = 'openai/gpt-5-mini'            # default model (students can switch with /model)
+$Model        = '@preset/hackathon-primary'    # primary model = OpenRouter preset (change the model in the preset, not here)
 $FastModel    = 'openai/gpt-5-mini'            # small background jobs and helpers
 $MinBuild = 17763; $MinNode = 18; $MinDiskGB = 5
 $NetTries = 18; if ($env:HACK_NET_TRIES) { $NetTries = [int]$env:HACK_NET_TRIES }
@@ -445,11 +445,9 @@ if ($GitBash) { $envBlock.CLAUDE_CODE_GIT_BASH_PATH = $GitBash }
 $picker = [ordered]@{
   replaceBuiltInOptions = $true
   options = @(
-    [ordered]@{ model = 'openai/gpt-5-mini'; label = 'GPT-5 mini'; description = 'Default. Fast and cheapest' },
-    [ordered]@{ model = 'anthropic/claude-haiku-4.5'; label = 'Claude Haiku 4.5'; description = 'Most Claude-like. Good for building sites' },
-    [ordered]@{ model = 'anthropic/claude-sonnet-5'; label = 'Claude Sonnet 5'; description = 'Best results. Uses credit fast' },
-    [ordered]@{ model = 'openai/gpt-5.6-terra'; label = 'GPT-5.6 Terra'; description = 'Stronger. Uses more credit' },
-    [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Strongest. Uses credit fastest' }
+    [ordered]@{ model = '@preset/hackathon-primary'; label = 'Primary (recommended)'; description = 'Use this for everything' },
+    [ordered]@{ model = 'openai/gpt-5.6-terra'; label = 'GPT-5.6 Terra'; description = 'Second choice' },
+    [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Second choice. Uses credit fastest' }
   )
 }
 $settings = [ordered]@{
@@ -478,7 +476,8 @@ if ($cur) {   # keep everything the student already had; add or replace only the
   if (-not $cur.env) { $cur | Add-Member -NotePropertyName env -NotePropertyValue (New-Object PSObject) -Force }
   foreach ($k in $envBlock.Keys) { $cur.env | Add-Member -NotePropertyName $k -NotePropertyValue $envBlock[$k] -Force }
   $cur.env.PSObject.Properties.Remove('ANTHROPIC_MODEL')                       # old setting that blocked /model choices
-  if (-not $cur.model) { $cur | Add-Member -NotePropertyName model -NotePropertyValue $Model -Force }   # keep the student's own choice
+  $okModels = @($picker.options | ForEach-Object { $_.model })
+  if ($okModels -notcontains $cur.model) { $cur | Add-Member -NotePropertyName model -NotePropertyValue $Model -Force }   # keep the student's choice only if it's still in the menu
   $cur | Add-Member -NotePropertyName modelPicker -NotePropertyValue $picker -Force
   if (-not $cur.permissions) { $cur | Add-Member -NotePropertyName permissions -NotePropertyValue (New-Object PSObject) -Force }
   $cur.permissions | Add-Member -NotePropertyName disableBypassPermissionsMode -NotePropertyValue 'disable' -Force
