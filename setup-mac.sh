@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Coach Foundation Hackathon - one-command setup (Mac)
-# Installs: Homebrew (+ Apple command line tools), Git, GitHub CLI, Node.js, Python 3.12,
-#           Claude Code, UI/UX Pro Max skill. Then connects Claude Code to the hackathon key.
+# Installs (all inside your home folder, no admin rights needed): Git, GitHub CLI, Node.js 22,
+#           Python 3.12, Claude Code, UI/UX Pro Max skill. Then connects Claude Code to the hackathon key.
 set -e
 DIR="$HOME/claude-hackathon"
 echo "== Hackathon setup (about 10-20 minutes) =="
@@ -12,39 +12,36 @@ read -rs KEY < /dev/tty; echo
 KEY="$(printf "%s" "$KEY" | tr -d '[:space:]')"
 case "$KEY" in sk-or-*) ;; *) echo "That does not look like a valid key. Re-run the command."; exit 1;; esac
 
-# 2. Homebrew (also installs Apple's command line tools). Asks for your Mac password once.
-if ! command -v brew >/dev/null 2>&1 && [ ! -x /opt/homebrew/bin/brew ] && [ ! -x /usr/local/bin/brew ]; then
-  echo "Installing Homebrew: press RETURN when asked, and type your Mac login password when asked (it won't show)..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty
+# 2. Git, GitHub CLI, Node.js 22 and Python 3.12, installed privately in your home folder
+#    (~/.hackathon-tools). No Homebrew, no admin rights and no Mac password needed.
+#    Tools you already have (your own Homebrew, Node, Python) are never touched or upgraded.
+TOOLS="$HOME/.hackathon-tools"
+export MAMBA_ROOT_PREFIX="$TOOLS/.mamba"
+MM="$TOOLS/.mamba/bin/micromamba"
+case "$(uname -m)" in arm64) MM_ARCH=osx-arm64 ;; *) MM_ARCH=osx-64 ;; esac
+if [ ! -x "$MM" ]; then
+  echo "Downloading the tool installer..."
+  mkdir -p "$(dirname "$MM")"
+  curl -fsSL "https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-$MM_ARCH" -o "$MM"
+  chmod +x "$MM"
 fi
-if [ -x /opt/homebrew/bin/brew ]; then BREW=/opt/homebrew/bin/brew; else BREW=/usr/local/bin/brew; fi
-eval "$($BREW shellenv)"
-grep -q "brew shellenv" "$HOME/.zprofile" 2>/dev/null || echo "eval \"\$($BREW shellenv)\"" >> "$HOME/.zprofile"
-
-# 2b. Homebrew installed by another Mac user? Take ownership so installs don't fail.
-BREW_PREFIX="$($BREW --prefix)"
-if [ ! -w "$BREW_PREFIX" ] || [ -n "$(find "$BREW_PREFIX" -maxdepth 3 -type d ! -perm -u+w -print -quit 2>/dev/null)" ] \
-   || [ -n "$(find "$BREW_PREFIX" -maxdepth 3 ! -user "$(whoami)" -print -quit 2>/dev/null)" ]; then
-  echo "Homebrew belongs to another user on this Mac. Fixing permissions: type your Mac login password if asked (it won't show)..."
-  sudo chown -R "$(whoami)" "$BREW_PREFIX" < /dev/tty || { echo "Could not fix Homebrew permissions. This Mac account must be an administrator: log in to an admin account and run the setup there."; exit 1; }
-  chmod -R u+w "$BREW_PREFIX"
+if [ -x "$TOOLS/bin/git" ] && [ -x "$TOOLS/bin/gh" ] && [ -x "$TOOLS/bin/node" ] && [ -x "$TOOLS/bin/python3.12" ]; then
+  echo "Git, GitHub CLI, Node.js and Python are already installed."
+else
+  echo "Installing Git, GitHub CLI, Node.js and Python (5-10 minutes, keep this window open)..."
+  if [ -d "$TOOLS/conda-meta" ]; then MM_CMD=install; else MM_CMD=create; fi
+  "$MM" "$MM_CMD" -y -q -p "$TOOLS" -c conda-forge --override-channels \
+    git gh "nodejs=22" "python=3.12" < /dev/null
 fi
-
-# 3. Git, GitHub CLI, Node.js, Python (only the missing ones; nothing already installed is upgraded)
-echo "Installing Git, GitHub CLI, Node.js and Python..."
-export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 HOMEBREW_NO_ENV_HINTS=1
-MISSING=""
-for pkg in git gh node python@3.12; do
-  brew list --formula "$pkg" >/dev/null 2>&1 || MISSING="$MISSING $pkg"
-done
-if [ -n "$MISSING" ]; then brew install $MISSING; else echo "Already installed."; fi
+export PATH="$TOOLS/bin:$HOME/.local/bin:$PATH"
+hash -r
 
 # 4. Claude Code (official native installer)
 if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
   echo "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
 fi
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$TOOLS/bin:$HOME/.local/bin:$PATH"
 
 # 5. UI/UX Pro Max design skill
 echo "Installing the UI/UX Pro Max design skill..."
@@ -108,16 +105,17 @@ else
   sed -i '' '1s/^{/{"hasCompletedOnboarding": true,/' "$F"
 fi
 
-# 8. Typing "claude" anywhere opens it in the hackathon workspace
+# 8. Typing "claude" anywhere opens it in the hackathon workspace, with the hackathon tools.
+#    The tools are added to PATH only for Claude, so your own setup stays exactly as it was.
 for RC in "$HOME/.zshrc" "$HOME/.bash_profile"; do
-  if ! grep -q ">>> hackathon claude >>>" "$RC" 2>/dev/null; then
-    cat >> "$RC" <<'RCEOF'
+  touch "$RC"
+  sed -i '' '/# >>> hackathon claude >>>/,/# <<< hackathon claude <<</d' "$RC"
+  cat >> "$RC" <<'RCEOF'
 # >>> hackathon claude >>>
 export PATH="$HOME/.local/bin:$PATH"
-claude() { cd "$HOME/claude-hackathon" && command claude "$@"; }
+claude() { ( cd "$HOME/claude-hackathon" && PATH="$HOME/.hackathon-tools/bin:$HOME/.local/bin:$PATH" command claude "$@" ); }
 # <<< hackathon claude <<<
 RCEOF
-  fi
 done
 
 # 9. Test the connection
