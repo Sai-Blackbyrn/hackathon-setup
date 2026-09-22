@@ -33,7 +33,21 @@ DIR="$HOME/claude-hackathon"
 TOOLS="$HOME/.local/hackathon-tools"      # Node.js and Python for Claude only
 TBIN="$TOOLS/bin"
 LOG="$DIR/setup-log.txt"
-MODE="install"; [ "${1:-}" = "--check" ] && MODE="check"
+MODE="install"; GROUP="${HACKATHON_GROUP:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) MODE="check" ;;
+    --group) GROUP="${2:-}"; shift ;;
+    --group=*) GROUP="${1#--group=}" ;;
+  esac
+  shift
+done
+# Group (girls / boys) comes from the command in the student's email; it is remembered for re-runs.
+GROUP_FILE="$HOME/.claude/hackathon-group"
+GROUP="$(printf '%s' "$GROUP" | tr '[:upper:]' '[:lower:]')"
+case "$GROUP" in girls|boys) ;; *) GROUP="$(cat "$GROUP_FILE" 2>/dev/null | tr -d '[:space:]')" ;; esac
+case "$GROUP" in girls|boys) MODEL="@preset/hackathon-$GROUP" ;; *) GROUP="" ;; esac
+[ -n "$GROUP" ] && SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash -s -- --group $GROUP"
 STEP="starting"; FAILED=0; NOTES=""
 
 # ---------- Colours ----------
@@ -390,7 +404,7 @@ cat > "$HS" <<JSON
   "modelPicker": {
     "replaceBuiltInOptions": true,
     "options": [
-      { "model": "@preset/hackathon-primary", "label": "Primary (recommended)", "description": "Use this for everything" },
+      { "model": "$MODEL", "label": "Primary (recommended)", "description": "Use this for everything" },
       { "model": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra", "description": "Second choice" },
       { "model": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol", "description": "Second choice. Uses credit fastest" }
     ]
@@ -489,7 +503,8 @@ claude() { ( [ "\$PWD" = "\$HOME" ] && cd "\$HOME/claude-hackathon"; printf '\\0
 # <<< hackathon claude <<<
 RCEOF
 done
-ok "Settings saved"
+[ -n "$GROUP" ] && { mkdir -p "$HOME/.claude"; printf '%s\n' "$GROUP" > "$GROUP_FILE"; }
+ok "Settings saved${GROUP:+ (group: $GROUP)}"
 
 fi  # end of install-only steps
 
