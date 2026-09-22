@@ -24,7 +24,7 @@ GH_VERSION="2.101.0"     # GitHub CLI
 UV_VERSION="0.12.17"     # uv (installs Python)
 NODE_LINE="latest-v22.x" # Node.js 22 LTS
 MODEL="@preset/hackathon-primary"        # primary model = OpenRouter preset (change the model in the preset, not here)
-FAST_MODEL="openai/gpt-5-mini"           # small background jobs and helpers
+FAST_MODEL="openai/gpt-5.4-mini"         # small background jobs and sub-agents (GPT-5.4 mini on Azure)
 MIN_MACOS=13; MIN_NODE=18; MIN_GH="2.40.0"; MIN_DISK_GB=5
 
 SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash"
@@ -396,6 +396,7 @@ cat > "$HS" <<JSON
     ]
   },
   "permissions": {
+    "defaultMode": "acceptEdits",
     "disableBypassPermissionsMode": "disable",
     "deny": [
       "Bash(sudo:*)", "Bash(rm -rf:*)", "Bash(rm -r:*)", "Bash(rmdir:*)",
@@ -415,6 +416,7 @@ const n=JSON.parse(fs.readFileSync(h,"utf8"));
 j.env=Object.assign({}, j.env, n.env); delete j.env.ANTHROPIC_MODEL;
 const ok=n.modelPicker.options.map(o=>o.model); if (!ok.includes(j.model)) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
 j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
+j.permissions.defaultMode=n.permissions.defaultMode;
 j.permissions.deny=[...new Set([...(j.permissions.deny||[]), ...n.permissions.deny])];
 fs.writeFileSync(f, JSON.stringify(j,null,2));' "$CS" "$HS"; then MERGED=1
 elif [ -n "$PY" ] && "$PY" - "$CS" "$HS" <<'PYEOF'
@@ -428,6 +430,7 @@ ok = [o["model"] for o in n["modelPicker"]["options"]]
 if j.get("model") not in ok: j["model"] = n["model"]
 j["modelPicker"] = n["modelPicker"] p = j.setdefault("permissions", {})
 p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
+p["defaultMode"] = n["permissions"]["defaultMode"]
 p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
 json.dump(j, open(f, "w"), indent=2)
 PYEOF
