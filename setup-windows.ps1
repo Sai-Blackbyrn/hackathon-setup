@@ -27,14 +27,18 @@ $Mode = 'install'; if ($env:HACK_CHECK -eq '1') { $Mode = 'check' }
 Remove-Item Env:HACK_CHECK -ErrorAction SilentlyContinue
 $script:Step = 'starting'
 
+# Colour key: installing = cyan, "do this now" = black on yellow, errors = white on red, fixes = yellow
 function OK($t)   { Write-Host "  OK   $t" -ForegroundColor Green }
-function BAD($t)  { Write-Host "  FAIL $t" -ForegroundColor Red }
+function TAG($t, $bg) { Write-Host " $t " -ForegroundColor White -BackgroundColor $bg -NoNewline }
+function BAD($t)  { Write-Host "  " -NoNewline; TAG 'FAIL' 'DarkRed'; Write-Host " $t" }
 function NOTE($t) { Write-Host "  NOTE $t" -ForegroundColor Yellow }
-function SAY($t)  { Write-Host ""; Write-Host $t -ForegroundColor Cyan }
+function SAY($t)  { Write-Host ""; Write-Host ">> $t" -ForegroundColor Cyan }                  # installation / progress
+function ACT($t)  { Write-Host " $t " -ForegroundColor Black -BackgroundColor Yellow }           # something the student must do now
+function FIXT($t) { Write-Host $t -ForegroundColor Yellow }                                     # how to fix a problem
 function Fail($code, $msg) {
   Write-Host ""
-  Write-Host "FAIL $code" -ForegroundColor Red
-  Write-Host $msg -ForegroundColor White
+  TAG "FAIL $code" 'DarkRed'; Write-Host ""
+  FIXT $msg
   Write-Host ""
   Write-Host "Take a screenshot of this window and send it to the help group."
   Write-Host "If you can, also send this file: $script:Dir\setup-log.txt"
@@ -99,8 +103,8 @@ if ($Mode -eq 'check') {
     $Key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
   }
 } else {
-  Write-Host "Paste your personal hackathon key (starts with sk-or-)."
-  Write-Host "Right-click to paste (or Ctrl + V), then press Enter. You will only see * while you paste. That's normal."
+  ACT "Paste your personal hackathon key (starts with sk-or-). Right-click to paste (or Ctrl + V), then press Enter."
+  FIXT "You will only see * while you paste. That's normal."
   $sec = Read-Host "Key" -AsSecureString
   $Key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 }
@@ -108,7 +112,7 @@ $Key = ("$Key" -replace '\s', '')
 if ($Mode -eq 'install') {
   if (-not $Key) { Fail K1 "No key was pasted. Run the command again. When it asks for the key, right-click to paste, then press Enter." }
   if (-not $Key.StartsWith('sk-or-v1-')) { Fail K1 "That is not a hackathon key. Copy the whole key from your email (it starts with sk-or-v1-) and run the command again." }
-  Write-Host "Key received (ends in ...$($Key.Substring($Key.Length-4)))"
+  Write-Host "Key received (ends in ...$($Key.Substring($Key.Length-4)))" -ForegroundColor Green
 }
 $KeyEnd = if ($Key.Length -ge 4) { $Key.Substring($Key.Length-4) } else { '' }
 
@@ -195,10 +199,11 @@ if ($Mode -eq 'install' -and $needWingetTools.Count -gt 0 -and -not $IsAdminMemb
 if ($Problems.Count -gt 0) {
   Write-Host ""
   Write-Host "Fix these, then run the same command again:" -ForegroundColor White
-  foreach ($p in $Problems) { Write-Host "FAIL $($p[0])  $($p[1])" -ForegroundColor Red }
+  foreach ($p in $Problems) { TAG "FAIL $($p[0])" 'DarkRed'; Write-Host " $($p[1])" -ForegroundColor Yellow }
   if ($Mode -eq 'install') {
     Write-Host ""
-    Write-Host "Setup stopped before installing anything. Take a screenshot of this window and send it to the help group if you need help."
+    FIXT "Setup stopped before installing anything. Fix the items above."
+    Write-Host "Take a screenshot of this window and send it to the help group if you need help."
     throw "HACKATHON_FAIL"
   }
 }
@@ -213,18 +218,18 @@ function Ensure-Tool($key, $name, $id, $extra, $code) {
   for ($attempt = 1; $attempt -le 2; $attempt++) {
     Write-Host ""
     if ($key -ne 'python') {
-      Write-Host "Installing $name..." -ForegroundColor Cyan
-      Write-Host ">> A Windows popup will ask 'Do you want to allow this app to make changes?'. Click YES." -ForegroundColor Yellow
-      Write-Host ">> No popup? Look for a flashing shield icon on the taskbar and click it." -ForegroundColor Yellow
-    } else { Write-Host "Installing $name..." -ForegroundColor Cyan }
+      Write-Host ">> Installing $name..." -ForegroundColor Cyan
+      ACT "A Windows popup will ask 'Do you want to allow this app to make changes?'. Click YES."
+      ACT "No popup? Look for a flashing shield icon on the taskbar and click it."
+    } else { Write-Host ">> Installing $name..." -ForegroundColor Cyan }
     $wa = @('install', '--id', $id, '-e', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements') + $extra
     & winget @wa
     $ec = $LASTEXITCODE
     $ErrorActionPreference = 'Continue'
     if ((Test-Tools)[$key]) { OK "$name installed"; return }
     if ($attempt -eq 1) {
-      Write-Host "$name did not install (code $ec). This usually means the permission popup was closed or No was clicked." -ForegroundColor Yellow
-      Write-Host "Trying once more. When the popup appears, click YES." -ForegroundColor Yellow
+      FIXT "$name did not install (code $ec). This usually means the permission popup was closed or No was clicked."
+      ACT "Trying once more. When the popup appears, click YES."
       Start-Sleep -Seconds 3
     }
   }
@@ -240,8 +245,8 @@ Ensure-Tool 'gh'     'GitHub CLI'  'GitHub.cli'        @() 'T2'
 if (-not (Test-Tools).node -and (Get-Command node -ErrorAction SilentlyContinue)) {
   # Node.js is there but too old: update only this one tool.
   $script:Step = 'updating Node.js'
-  Write-Host ""; Write-Host "Your Node.js is too old ($(& node -v)). Updating it..." -ForegroundColor Cyan
-  Write-Host ">> If a Windows popup asks for permission, click YES." -ForegroundColor Yellow
+  Write-Host ""; Write-Host ">> Your Node.js is too old ($(& node -v)). Updating it..." -ForegroundColor Cyan
+  ACT "If a Windows popup asks for permission, click YES."
   & winget upgrade --id OpenJS.NodeJS.LTS -e --source winget --silent --accept-package-agreements --accept-source-agreements
   if (-not (Test-Tools).node) {
     & winget install --id OpenJS.NodeJS.LTS -e --source winget --silent --force --accept-package-agreements --accept-source-agreements
@@ -416,7 +421,7 @@ if ($ccv) {
     } catch { $out = "$_" }
     if ($out -match 'SETUP OK') { $ClOK = $true; break }
     if ($attempt -eq 1 -and $out -match '429|rate.?limit|too many requests|overloaded') {
-      Write-Host "  The AI service is busy. Trying again in 30 seconds..."; Start-Sleep -Seconds 30; continue
+      FIXT "  The AI service is busy. Trying again in 30 seconds..."; Start-Sleep -Seconds 30; continue
     }
     break
   }
@@ -442,8 +447,8 @@ if ($tools.gh) {
   if ($LASTEXITCODE -ne 0 -and $Mode -eq 'install') {
     $script:Step = 'logging in to GitHub'
     SAY "Now log in to GitHub."
-    Write-Host "1. Press Enter when asked. Your browser opens."
-    Write-Host "2. Copy the 8-character code shown here, paste it in the browser, and click Authorize."
+    ACT "1. Press Enter when asked. Your browser opens."
+    ACT "2. Copy the 8-character code shown here, paste it in the browser, and click Authorize."
     & gh auth login -h github.com -p https -w
   }
   & gh auth status *> $null
@@ -472,7 +477,8 @@ if ($All -and $ClOK) {
   return
 }
 if ($Mode -eq 'check') {
-  Write-Host "CHECK DONE - items marked FAIL above are not ready. Run the setup command to fix them, or send this screenshot to the help group." -ForegroundColor Yellow
+  TAG 'CHECK DONE' 'DarkYellow'; Write-Host ""
+  FIXT "Items marked FAIL above are not ready. Run the setup command to fix them, or send this screenshot to the help group."
   return
 }
 if ($ClCode) { Fail $ClCode $ClMsg }
@@ -485,8 +491,8 @@ try { Invoke-HackathonSetup }
 catch {
   if ("$_" -ne 'HACKATHON_FAIL') {
     Write-Host ""
-    Write-Host "FAIL X1" -ForegroundColor Red
-    Write-Host "Setup stopped during: $script:Step. Run the same command again. It continues where it stopped." -ForegroundColor White
+    Write-Host " FAIL X1 " -ForegroundColor White -BackgroundColor DarkRed
+    Write-Host "Setup stopped during: $script:Step. Run the same command again. It continues where it stopped." -ForegroundColor Yellow
     Write-Host "If it stops again, send a screenshot of this window to the help group."
     Write-Host "Details: $_"
   }
