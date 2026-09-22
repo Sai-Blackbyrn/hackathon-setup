@@ -23,7 +23,8 @@ UIPRO_VERSION="2.15.0"   # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.
 GH_VERSION="2.101.0"     # GitHub CLI
 UV_VERSION="0.12.17"     # uv (installs Python)
 NODE_LINE="latest-v22.x" # Node.js 22 LTS
-MODEL="openai/gpt-5-mini"
+MODEL="openai/gpt-5-mini"                # default model (students can switch with /model)
+FAST_MODEL="openai/gpt-5-mini"           # small background jobs and helpers
 MIN_MACOS=13; MIN_NODE=18; MIN_GH="2.40.0"; MIN_DISK_GB=5
 
 SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash"
@@ -377,14 +378,23 @@ cat > "$HS" <<JSON
     "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
     "ANTHROPIC_AUTH_TOKEN": "$KEY",
     "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_MODEL": "$MODEL",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "$MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "$MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "$FAST_MODEL",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "$MODEL",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "$MODEL",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "$FAST_MODEL",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000",
     "DISABLE_AUTOUPDATER": "1"
+  },
+  "model": "$MODEL",
+  "modelPicker": {
+    "replaceBuiltInOptions": true,
+    "options": [
+      { "model": "openai/gpt-5-mini", "label": "GPT-5 mini", "description": "Default. Fast and cheapest" },
+      { "model": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "description": "Most Claude-like. Good for building sites" },
+      { "model": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra", "description": "Stronger. Uses more credit" },
+      { "model": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol", "description": "Strongest. Uses credit fastest" }
+    ]
   },
   "permissions": {
     "disableBypassPermissionsMode": "disable",
@@ -403,7 +413,8 @@ if [ -n "$NODE" ] && "$NODE" -e '
 const fs=require("fs"), f=process.argv[1], h=process.argv[2];
 let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
 const n=JSON.parse(fs.readFileSync(h,"utf8"));
-j.env=Object.assign({}, j.env, n.env); j.permissions=j.permissions||{};
+j.env=Object.assign({}, j.env, n.env); delete j.env.ANTHROPIC_MODEL;
+if (!j.model) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
 j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
 j.permissions.deny=[...new Set([...(j.permissions.deny||[]), ...n.permissions.deny])];
 fs.writeFileSync(f, JSON.stringify(j,null,2));' "$CS" "$HS"; then MERGED=1
@@ -413,7 +424,8 @@ f, h = sys.argv[1], sys.argv[2]
 try: j = json.load(open(f))
 except Exception: j = {}
 n = json.load(open(h))
-j.setdefault("env", {}).update(n["env"]); p = j.setdefault("permissions", {})
+j.setdefault("env", {}).update(n["env"]); j["env"].pop("ANTHROPIC_MODEL", None)
+j.setdefault("model", n["model"]); j["modelPicker"] = n["modelPicker"]; p = j.setdefault("permissions", {})
 p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
 p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
 json.dump(j, open(f, "w"), indent=2)
