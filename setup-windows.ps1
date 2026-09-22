@@ -137,8 +137,25 @@ try {
 
 # 8. Test the connection
 Write-Host "Testing Claude..."
-$out = (& $ClaudeExe -p "Reply with exactly: SETUP OK" 2>&1 | Out-String)
-$ClaudeOK = $out -match "SETUP OK"
+# Run the test as a separate process: stdout and stderr go to temp files, so Claude Code's
+# harmless "[claude-code:unrecognized_model]" notice on stderr can't be mistaken for an error.
+$tOut = Join-Path $env:TEMP "hackathon-claude-test.out"
+$tErr = Join-Path $env:TEMP "hackathon-claude-test.err"
+Remove-Item $tOut, $tErr -ErrorAction SilentlyContinue
+$out = ""; $errText = ""
+try {
+  $p = Start-Process -FilePath $ClaudeExe -ArgumentList '-p', '"Reply with exactly: SETUP OK"' `
+        -WorkingDirectory (Get-Location).Path -NoNewWindow -PassThru `
+        -RedirectStandardOutput $tOut -RedirectStandardError $tErr
+  if (-not $p.WaitForExit(180000)) { try { $p.Kill() } catch {} ; $errText = "Timed out after 3 minutes." }
+  if (Test-Path $tOut) { $out = Get-Content $tOut -Raw -ErrorAction SilentlyContinue }
+  if (Test-Path $tErr) {
+    $errText += ((Get-Content $tErr -ErrorAction SilentlyContinue) |
+      Where-Object { $_ -and ($_ -notmatch "unrecognized_model") }) -join "`n"
+  }
+} catch { $errText = "$_" }
+$ClaudeOK = ("$out" -match "SETUP OK")
+if (-not $ClaudeOK -and $errText) { Write-Host "Claude test details: $errText" -ForegroundColor Yellow }
 
 # 9. Log in to GitHub (opens your browser)
 & gh auth status *> $null
