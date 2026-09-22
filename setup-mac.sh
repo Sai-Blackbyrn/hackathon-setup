@@ -368,6 +368,10 @@ mkdir -p "$DIR/.claude"
 if [ -f "$HOME/.claude/skills/design-system/SKILL.md" ]; then ok "Design skill is already installed. Skipping this step."
 elif [ -z "$NODE" ]; then note_skip "Design skill skipped (it needs Node.js). Claude Code still works."
 else
+  # Older setups installed the retired "uipro-cli" package, which owns the same "uipro" command. Remove it first,
+  # otherwise npm stops with "EEXIST: file already exists".
+  "$(dirname "$NODE")/npm" uninstall -g --prefix "$HOME/.local" uipro-cli --no-fund --no-audit < /dev/null >/dev/null 2>&1 || true
+  [ -f "$HOME/.local/lib/node_modules/ui-ux-pro-max-cli/package.json" ] || rm -f "$HOME/.local/bin/uipro"
   get_skill() { "$(dirname "$NODE")/npm" install -g --prefix "$HOME/.local" "ui-ux-pro-max-cli@$UIPRO_VERSION" --no-fund --no-audit < /dev/null \
                 && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude --global --force --offline < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --global --force < /dev/null; } ) \
                 && [ -f "$HOME/.claude/skills/ui-ux-pro-max/SKILL.md" ] && rm -rf "$DIR/.claude/skills"; }
