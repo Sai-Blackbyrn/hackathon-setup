@@ -461,6 +461,9 @@ else bad "GitHub not logged in (G1)"; ALL=0; fi
 # ---------- 13. Final answer ----------
 echo ""
 if [ "$ALL" = 1 ] && [ "$CL_OK" = 1 ]; then
+  printf "\n\033[1;30;42m                            \033[0m\n"
+  printf "\033[1;30;42m   Your Setup Is Complete   \033[0m\n"
+  printf "\033[1;30;42m                            \033[0m\n\n"
   printf "${G}${B}PASS${N} - take a screenshot of this window and send it to the organisers.\n"
   [ "$MODE" = "install" ] && printf "Now quit Terminal (Cmd + Q), open it again, and type:  ${B}claude${N}\n"
   FAILED=1; sleep 1; exit 0   # FAILED=1 only silences the X1 message
