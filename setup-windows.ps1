@@ -462,6 +462,11 @@ else { BAD "GitHub not logged in (G1)"; $All = $false }
 # ---------- 11. Final answer ----------
 Write-Host ""
 if ($All -and $ClOK) {
+  Write-Host ""
+  Write-Host "                            " -BackgroundColor Green
+  Write-Host "   Your Setup Is Complete   " -ForegroundColor Black -BackgroundColor Green
+  Write-Host "                            " -BackgroundColor Green
+  Write-Host ""
   Write-Host "PASS - take a screenshot of this window and send it to the organisers." -ForegroundColor Green
   if ($Mode -eq 'install') { Write-Host "Now close ALL PowerShell windows, open PowerShell again, and type:  claude" }
   return
