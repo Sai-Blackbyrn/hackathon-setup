@@ -21,7 +21,7 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
 # ---------- Pinned versions (tested for this event) ----------
 $CcVersion    = '2.1.278'                 # Claude Code
-$UiproVersion = '2.2.3'                   # uipro-cli (design skill)
+$UiproVersion = '2.15.0'                  # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.cc)
 $GhVersion    = '2.101.0'                 # GitHub CLI
 $GitTag       = 'v2.55.0.windows.5'; $GitVer = '2.55.0.5'   # Git for Windows (PortableGit)
 $UvVersion    = '0.12.17'                 # uv (installs Python)
@@ -42,11 +42,11 @@ $Notes = @()
 function OK($t)   { Write-Host "  OK   $t" -ForegroundColor Green }
 function TAG($t, $bg) { Write-Host " $t " -ForegroundColor White -BackgroundColor $bg -NoNewline }
 function BAD($t)  { Write-Host "  " -NoNewline; TAG 'FAIL' 'DarkRed'; Write-Host " $t" }
-function NOTE($t) { Write-Host "  NOTE $t" -ForegroundColor Yellow }
+function NOTE($t) { Write-Host "  " -NoNewline; Write-Host " NOTE " -ForegroundColor Black -BackgroundColor DarkYellow -NoNewline; Write-Host " $t" }
 function ACT($t)  { Write-Host " $t " -ForegroundColor Black -BackgroundColor Yellow }
-function FIXT($t) { Write-Host $t -ForegroundColor Yellow }
-function INST($t) { Write-Host $t -ForegroundColor Cyan }
-function STEPH($n, $t) { Write-Host ""; Write-Host "==== STEP $n ====" -ForegroundColor Cyan; Write-Host $t -ForegroundColor Cyan }
+function FIXT($t) { Write-Host " $t " -ForegroundColor Black -BackgroundColor Cyan }
+function INST($t) { Write-Host $t -ForegroundColor White }
+function STEPH($n, $t) { Write-Host ""; Write-Host " STEP $n  -  $t " -ForegroundColor White -BackgroundColor DarkBlue }
 function SKIP($t) { $script:Notes += $t; NOTE $t }
 function Show-Cmd($c) {
   Write-Host ""; ACT "Copy this line, paste it in PowerShell (right-click to paste), press Enter:"
@@ -263,7 +263,7 @@ if ($Key) {
 
 if ($Problems.Count -gt 0) {
   Write-Host ""; Write-Host "Please fix these, then run setup again:" -ForegroundColor White
-  foreach ($p in $Problems) { TAG "FAIL $($p[0])" 'DarkRed'; Write-Host " $($p[1])" -ForegroundColor Yellow }
+  foreach ($p in $Problems) { TAG "FAIL $($p[0])" 'DarkRed'; Write-Host " "; FIXT $p[1] }
   if ($Mode -eq 'install') {
     Show-Cmd $SetupCmd
     Write-Host "Stuck? Paste a screenshot into the Setup Helper chat: $HelpChat"
@@ -402,20 +402,20 @@ $ErrorActionPreference = 'Continue'
 # ---------- STEP 7: design skill (nice to have) ----------
 $script:Step = 'installing the design skill'
 STEPH '7 of 9' 'Design skill (about 1 minute)'
-$HasSkill = { [bool](Get-ChildItem "$Dir\.claude\skills" -Recurse -Filter SKILL.md -ErrorAction SilentlyContinue) }
-if (& $HasSkill) { OK "Design skill is already installed. Skipping this step." }
+$HasSkill = { Test-Path "$Dir\.claude\skills\ui-ux-pro-max\SKILL.md" }
+if (Test-Path "$Dir\.claude\skills\design-system\SKILL.md") { OK "Design skill is already installed. Skipping this step." }
 elseif (-not (Test-Tools).node) { SKIP "Design skill skipped (it needs Node.js). Claude Code still works." }
 else {
   INST "Installing the design skill..."
   $okSkill = Invoke-Retry 'Installing the design skill' {
     $npm = Join-Path (Split-Path (Get-Command node).Source) 'npm.cmd'
-    $o = cmd /c "`"$npm`" install -g --prefix `"$Tools\npm`" uipro-cli@$UiproVersion --no-fund --no-audit 2>&1"
+    $o = cmd /c "`"$npm`" install -g --prefix `"$Tools\npm`" ui-ux-pro-max-cli@$UiproVersion --no-fund --no-audit 2>&1"
     $uipro = "$Tools\npm\uipro.cmd"
     if (-not (Test-Path $uipro)) { return $false }
     Push-Location $Dir
-    & $uipro init --ai claude | Out-Host
+    & $uipro init --ai claude --force --offline | Out-Host
     $ErrorActionPreference = 'Continue'
-    if (-not (& $HasSkill)) { & $uipro init --ai claude --offline | Out-Host; $ErrorActionPreference = 'Continue' }
+    if (-not (& $HasSkill)) { & $uipro init --ai claude --force | Out-Host; $ErrorActionPreference = 'Continue' }
     Pop-Location
     return (& $HasSkill)
   }
@@ -594,7 +594,7 @@ if ($tools.gh) {
 }
 
 # ---------- Result ----------
-Write-Host ""; Write-Host "==== RESULT ====" -ForegroundColor Cyan
+Write-Host ""; Write-Host " RESULT " -ForegroundColor White -BackgroundColor DarkBlue
 $All = $true
 if ($tools.git) { OK "Git" } else { BAD "Git (T1)"; $All = $false }
 if ($tools.gh)  { OK "GitHub tool" } else { BAD "GitHub tool (T2)"; $All = $false }
@@ -604,7 +604,7 @@ if ($ClOK) { OK "The AI works" } else { BAD "The AI ($(if ($ClCode) { $ClCode } 
 if ($GhUser) { OK "GitHub account: $GhUser  (not you? run  gh auth logout  then run setup again)" } else { BAD "GitHub not connected (G1)"; $All = $false }
 if ($tools.node)   { OK "Node.js" } else { NOTE "Node.js not installed (optional)" }
 if ($tools.python) { OK "Python" } else { NOTE "Python not installed (optional)" }
-if (Get-ChildItem "$Dir\.claude\skills" -Recurse -Filter SKILL.md -ErrorAction SilentlyContinue) { OK "Design skill" } else { NOTE "Design skill not installed (optional)" }
+if (Test-Path "$Dir\.claude\skills\ui-ux-pro-max\SKILL.md") { OK "Design skills (UI/UX Pro Max)" } else { NOTE "Design skill not installed (optional)" }
 
 Write-Host ""
 if ($All) {
@@ -640,7 +640,7 @@ catch {
   if ("$_" -ne 'HACKATHON_FAIL') {
     Write-Host ""
     Write-Host " FAIL X1 " -ForegroundColor White -BackgroundColor DarkRed
-    Write-Host "Setup stopped during: $script:Step. Run setup again. It continues where it stopped." -ForegroundColor Yellow
+    Write-Host "Setup stopped during: $script:Step. Run setup again. It continues where it stopped. " -ForegroundColor Black -BackgroundColor Cyan
     Write-Host ""
     Write-Host " Copy this line, paste it in PowerShell (right-click to paste), press Enter: " -ForegroundColor Black -BackgroundColor Yellow
     Write-Host ""
