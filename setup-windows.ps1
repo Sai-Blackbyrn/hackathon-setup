@@ -27,7 +27,7 @@ $GitTag       = 'v2.55.0.windows.5'; $GitVer = '2.55.0.5'   # Git for Windows (P
 $UvVersion    = '0.12.17'                 # uv (installs Python)
 $NodeLine     = 'latest-v22.x'            # Node.js 22 LTS
 $Model        = '@preset/hackathon-primary'    # primary model = OpenRouter preset (change the model in the preset, not here)
-$FastModel    = 'openai/gpt-5-mini'            # small background jobs and helpers
+$FastModel    = 'openai/gpt-5.4-mini'          # small background jobs and sub-agents (GPT-5.4 mini on Azure)
 $MinBuild = 17763; $MinNode = 18; $MinDiskGB = 5
 $NetTries = 18; if ($env:HACK_NET_TRIES) { $NetTries = [int]$env:HACK_NET_TRIES }
 
@@ -455,6 +455,7 @@ $settings = [ordered]@{
   model = $Model
   modelPicker = $picker
   permissions = [ordered]@{
+    defaultMode = 'acceptEdits'
     disableBypassPermissionsMode = 'disable'
     deny = @(
       'Bash(sudo:*)','Bash(rm -rf:*)','Bash(rm -r:*)','Bash(rmdir:*)',
@@ -481,6 +482,7 @@ if ($cur) {   # keep everything the student already had; add or replace only the
   $cur | Add-Member -NotePropertyName modelPicker -NotePropertyValue $picker -Force
   if (-not $cur.permissions) { $cur | Add-Member -NotePropertyName permissions -NotePropertyValue (New-Object PSObject) -Force }
   $cur.permissions | Add-Member -NotePropertyName disableBypassPermissionsMode -NotePropertyValue 'disable' -Force
+  $cur.permissions | Add-Member -NotePropertyName defaultMode -NotePropertyValue 'acceptEdits' -Force   # edit files without asking; commands still ask
   $deny = @(@($cur.permissions.deny) + $settings.permissions.deny | Where-Object { $_ } | Select-Object -Unique)
   $cur.permissions | Add-Member -NotePropertyName deny -NotePropertyValue $deny -Force
   [IO.File]::WriteAllText($SettingsFile, ($cur | ConvertTo-Json -Depth 20), $Utf8)
