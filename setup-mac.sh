@@ -65,6 +65,21 @@ real_cmd() {
 node_major() { "$1" -v 2>/dev/null | sed 's/^v//' | cut -d. -f1; }
 json_num() { sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9.eE+-]*\).*/\1/p" | head -n1; }
 
+# Folders Homebrew must be able to write to (on Intel Macs /usr/local itself is owned by root, which is normal).
+brew_dirs() {
+  printf '%s\n' "$BREW_REPO"
+  for d in bin etc include lib sbin share var opt Cellar Caskroom Frameworks; do
+    [ -e "$BREW_PREFIX/$d" ] && printf '%s\n' "$BREW_PREFIX/$d"
+  done
+  return 0
+}
+brew_writable() {
+  while IFS= read -r d; do [ -w "$d" ] || return 1; done <<EOF_DIRS
+$(brew_dirs)
+EOF_DIRS
+  return 0
+}
+
 find_brew() {
   BREW="$(command -v brew 2>/dev/null || true)"
   [ -z "$BREW" ] && [ -x /opt/homebrew/bin/brew ] && BREW=/opt/homebrew/bin/brew
@@ -191,7 +206,7 @@ else warn "Key not checked (none given)"; fi
 find_brew
 check_tools
 if [ -n "$BREW" ]; then
-  if [ -w "$BREW_PREFIX" ] && [ -w "$BREW_REPO" ]; then ok "Homebrew ($BREW_PREFIX)"
+  if brew_writable; then ok "Homebrew ($BREW_PREFIX)"
   else BREW_OWNER="$(stat -f %Su "$BREW_REPO" 2>/dev/null)"; warn "Homebrew belongs to the Mac account '$BREW_OWNER'"; fi
 else
   warn "Homebrew not installed yet (setup will install it)"
@@ -218,7 +233,7 @@ if [ "$MODE" = "install" ]; then
 # ---------- 3. Mac password (only if something needs it) ----------
 NEED_SUDO=0
 [ -z "$BREW" ] && NEED_SUDO=1
-if [ -n "$BREW" ] && [ -n "$NEED" ] && { [ ! -w "$BREW_PREFIX" ] || [ ! -w "$BREW_REPO" ]; }; then
+if [ -n "$BREW" ] && [ -n "$NEED" ] && ! brew_writable; then
   STEP="taking over Homebrew"
   printf "\n${Y}${B}Homebrew on this Mac was installed by another Mac account ('%s').${N}\n" "$BREW_OWNER"
   printf "Setup needs to take it over to add:%s\nAfter this, the account '%s' will not be able to update Homebrew until it runs the same fix.\n" " $NEED" "$BREW_OWNER"
@@ -237,7 +252,8 @@ if [ "$NEED_SUDO" != 0 ]; then
   ( while kill -0 $$ 2>/dev/null; do sudo -n true 2>/dev/null; sleep 50; done ) &
 fi
 if [ "$NEED_SUDO" = 2 ]; then
-  sudo chown -R "$(whoami)" "$BREW_PREFIX" "$BREW_REPO" && chmod -R u+w "$BREW_PREFIX" "$BREW_REPO" \
+  BDIRS="$(brew_dirs)"
+  ( IFS=$'\n'; sudo chown -R "$(whoami)" $BDIRS && chmod -R u+w $BDIRS ) \
     || fail H2 "Setup could not take over Homebrew. Log in to the Mac account '$BREW_OWNER' and run the command there."
 fi
 
@@ -259,7 +275,11 @@ if [ -n "$NEED" ]; then
   STEP="installing $NEED"
   say "Installing:$( echo " $NEED") (5-15 minutes)..."
   for f in $NEED; do
-    "$BREW" install "$f" < /dev/null || "$BREW" install "$f" < /dev/null || true
+    if "$BREW" list --formula "$f" >/dev/null 2>&1; then
+      "$BREW" upgrade "$f" < /dev/null || true          # installed by Homebrew but too old
+    else
+      "$BREW" install "$f" < /dev/null || "$BREW" install "$f" < /dev/null || true
+    fi
   done
   hash -r; check_tools
 fi
@@ -443,7 +463,11 @@ echo ""
 if [ "$ALL" = 1 ] && [ "$CL_OK" = 1 ]; then
   printf "${G}${B}PASS${N} - take a screenshot of this window and send it to the organisers.\n"
   [ "$MODE" = "install" ] && printf "Now quit Terminal (Cmd + Q), open it again, and type:  ${B}claude${N}\n"
-  FAILED=1; exit 0   # FAILED=1 only silences the X1 message
+  FAILED=1; sleep 1; exit 0   # FAILED=1 only silences the X1 message
+fi
+if [ "$MODE" = "check" ]; then
+  printf "${Y}${B}CHECK DONE${N} - items marked FAIL above are not ready. Run the setup command to fix them,\nor send this screenshot to the help group.\n"
+  FAILED=1; sleep 1; exit 0
 fi
 if [ "${CL_CODE:-}" != "" ] && [ "$CL_OK" = 0 ]; then fail "$CL_CODE" "$CL_MSG"; fi
 if [ -z "$GH_USER" ]; then fail G1 "GitHub login did not finish. Run the setup command again and complete the browser step (paste the code, click Authorize). No GitHub account yet? Create one at github.com and verify your email first."; fi
