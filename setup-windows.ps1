@@ -420,6 +420,10 @@ else {
   INST "Installing the design skill..."
   $okSkill = Invoke-Retry 'Installing the design skill' {
     $npm = Join-Path (Split-Path (Get-Command node).Source) 'npm.cmd'
+    # Older setups installed the retired "uipro-cli" package, which owns the same "uipro" command.
+    # Remove it first, otherwise npm stops with "EEXIST: file already exists".
+    cmd /c "`"$npm`" uninstall -g --prefix `"$Tools\npm`" uipro-cli --no-fund --no-audit >nul 2>&1" | Out-Null
+    if (-not (Test-Path "$Tools\npm\node_modules\ui-ux-pro-max-cli\package.json")) { Remove-Item "$Tools\npm\uipro", "$Tools\npm\uipro.cmd", "$Tools\npm\uipro.ps1" -Force -ErrorAction SilentlyContinue }
     $o = cmd /c "`"$npm`" install -g --prefix `"$Tools\npm`" ui-ux-pro-max-cli@$UiproVersion --no-fund --no-audit 2>&1"
     $uipro = "$Tools\npm\uipro.cmd"
     if (-not (Test-Path $uipro)) { return $false }
