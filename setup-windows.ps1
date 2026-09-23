@@ -28,6 +28,7 @@ $UvVersion    = '0.12.17'                 # uv (installs Python)
 $NodeLine     = 'latest-v22.x'            # Node.js 22 LTS
 $Model        = '@preset/hackathon-primary'    # primary model = OpenRouter preset (change the model in the preset, not here)
 $FastModel    = 'openai/gpt-5.4-mini'          # small background jobs and sub-agents (GPT-5.4 mini on Azure)
+$AdminWhatsApp = '+000 0000 0000'             # admin team WhatsApp, shown in the 'Internal error 500' popup
 $MinBuild = 17763; $MinNode = 18; $MinDiskGB = 5
 $NetTries = 18; if ($env:HACK_NET_TRIES) { $NetTries = [int]$env:HACK_NET_TRIES }
 
@@ -463,10 +464,14 @@ $picker = [ordered]@{
     [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Second choice. Uses credit fastest' }
   )
 }
+# When a turn ends on an API error (credit, key limit, auth, server), show a popup telling the student to WhatsApp the admin team
+$AlertPs1 = "$env:USERPROFILE\.claude\hackathon-api-alert.ps1"
+$hooksBlock = [ordered]@{ StopFailure = @( [ordered]@{ hooks = @( [ordered]@{ type = 'command'; command = 'powershell.exe'; args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $AlertPs1); timeout = 15 } ) } ) }
 $settings = [ordered]@{
   env = $envBlock
   model = $Model
   modelPicker = $picker
+  hooks = $hooksBlock
   permissions = [ordered]@{
     defaultMode = 'acceptEdits'
     disableBypassPermissionsMode = 'disable'
@@ -481,6 +486,26 @@ $settings = [ordered]@{
 }
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
+$alertCode = @'
+# AI Shift Training - runs when Claude stops on an API error (StopFailure hook)
+param([switch]$Show, [string]$Err = '')
+$msg = "Internal error 500" + $(if ($Err) { " ($Err)" } else { '' }) + "`n`nClaude could not reach the AI service.`n`nPlease take a screenshot of the Claude window and send it to the admin team on WhatsApp: __WA__`n`nWait for their reply before trying again."
+if ($Show) { (New-Object -ComObject WScript.Shell).Popup($msg, 0, 'AI Shift Studio - contact the admin team', 48 + 4096) | Out-Null; exit 0 }
+try {
+  $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  foreach ($n in 'error', 'error_type', 'reason') { $v = $j.$n; if ($v -is [string] -and $v) { $Err = $v; break } elseif ($v -and $v.type) { $Err = [string]$v.type; break } }
+} catch {}
+$Err = $Err -replace '[^A-Za-z0-9_ ]', ''
+$stamp = "$env:USERPROFILE\.claude\.api-alert-stamp"
+$recent = (Test-Path $stamp) -and (((Get-Date) - (Get-Item $stamp).LastWriteTime).TotalSeconds -lt 120)
+if (-not $recent) {
+  Set-Content $stamp '' -ErrorAction SilentlyContinue
+  try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Show -Err `"$Err`"" -ErrorAction Stop } catch {}
+}
+$e = [char]27; $b = [char]7
+@{ terminalSequence = "$e]0;API ERROR - screenshot and WhatsApp the admin team$b$e]9;Internal error 500 - screenshot and WhatsApp the admin team$b" } | ConvertTo-Json -Compress
+'@
+[IO.File]::WriteAllText($AlertPs1, $alertCode.Replace('__WA__', $AdminWhatsApp), $Utf8)
 $cur = $null
 if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw).Trim().Length -gt 2)) {
   Copy-Item $SettingsFile "$SettingsFile.hackathon-backup" -Force -ErrorAction SilentlyContinue
@@ -498,6 +523,8 @@ if ($cur) {   # keep everything the student already had; add or replace only the
   $cur.permissions | Add-Member -NotePropertyName defaultMode -NotePropertyValue 'acceptEdits' -Force   # edit files without asking; commands still ask
   $deny = @(@($cur.permissions.deny) + $settings.permissions.deny | Where-Object { $_ } | Select-Object -Unique)
   $cur.permissions | Add-Member -NotePropertyName deny -NotePropertyValue $deny -Force
+  if (-not $cur.hooks) { $cur | Add-Member -NotePropertyName hooks -NotePropertyValue (New-Object PSObject) -Force }
+  $cur.hooks | Add-Member -NotePropertyName StopFailure -NotePropertyValue $hooksBlock.StopFailure -Force   # keep the student's other hooks
   [IO.File]::WriteAllText($SettingsFile, ($cur | ConvertTo-Json -Depth 20), $Utf8)
 } else {
   [IO.File]::WriteAllText($SettingsFile, ($settings | ConvertTo-Json -Depth 10), $Utf8)
