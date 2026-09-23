@@ -25,6 +25,7 @@ UV_VERSION="0.12.17"     # uv (installs Python)
 NODE_LINE="latest-v22.x" # Node.js 22 LTS
 MODEL="@preset/hackathon-primary"        # primary model = OpenRouter preset (change the model in the preset, not here)
 FAST_MODEL="openai/gpt-5.4-mini"         # small background jobs and sub-agents (GPT-5.4 mini on Azure)
+ADMIN_WHATSAPP="+000 0000 0000"          # admin team WhatsApp, shown in the "Internal error 500" popup
 MIN_MACOS=13; MIN_NODE=18; MIN_GH="2.40.0"; MIN_DISK_GB=5
 
 SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash"
@@ -388,6 +389,30 @@ step "8 of 9" "Saving your settings (a few seconds)"
 # so they work in every folder. Anything the student already had in that file is kept.
 mkdir -p "$HOME/.claude"
 CS="$HOME/.claude/settings.json"; HS="$TOOLS/hackathon-settings.json"
+# When a turn ends on an API error (credit, key limit, auth, server), show a popup telling the student to WhatsApp the admin team
+ALERT="$HOME/.claude/hackathon-api-alert.sh"
+cat > "$ALERT" <<'ALERTEOF'
+#!/bin/bash
+# AI Shift Training - runs when Claude stops on an API error (StopFailure hook)
+WA="__WA__"
+input=$(cat)
+err=$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_ ]*\)".*/\1/p' | head -n1)
+stamp="$HOME/.claude/.api-alert-stamp"; now=$(date +%s); last=$(cat "$stamp" 2>/dev/null || echo 0)
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+if [ $((now - last)) -ge 120 ]; then
+  echo "$now" > "$stamp"
+  msg="Internal error 500${err:+ ($err)}
+
+Claude could not reach the AI service.
+
+Please take a screenshot of the Terminal window and send it to the admin team on WhatsApp: $WA
+
+Wait for their reply before trying again."
+  nohup osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "AI Shift Studio - contact the admin team" buttons {"OK"} default button 1 with icon caution' -e 'end run' "$msg" >/dev/null 2>&1 &
+fi
+printf '{"terminalSequence":"\\u001b]0;API ERROR - screenshot and WhatsApp the admin team\\u0007"}\n'
+ALERTEOF
+sed -i '' "s|__WA__|$ADMIN_WHATSAPP|" "$ALERT"
 [ -s "$CS" ] && cp "$CS" "$CS.hackathon-backup" 2>/dev/null
 umask 077
 cat > "$HS" <<JSON
@@ -405,6 +430,9 @@ cat > "$HS" <<JSON
     "DISABLE_AUTOUPDATER": "1"
   },
   "model": "$MODEL",
+  "hooks": {
+    "StopFailure": [ { "hooks": [ { "type": "command", "command": "/bin/bash", "args": ["$ALERT"], "timeout": 15 } ] } ]
+  },
   "modelPicker": {
     "replaceBuiltInOptions": true,
     "options": [
@@ -432,6 +460,7 @@ const fs=require("fs"), f=process.argv[1], h=process.argv[2];
 let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
 const n=JSON.parse(fs.readFileSync(h,"utf8"));
 j.env=Object.assign({}, j.env, n.env); delete j.env.ANTHROPIC_MODEL;
+j.hooks=Object.assign({}, j.hooks, {StopFailure: n.hooks.StopFailure});
 const ok=n.modelPicker.options.map(o=>o.model); if (!ok.includes(j.model)) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
 j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
 j.permissions.defaultMode=n.permissions.defaultMode;
@@ -446,7 +475,9 @@ n = json.load(open(h))
 j.setdefault("env", {}).update(n["env"]); j["env"].pop("ANTHROPIC_MODEL", None)
 ok = [o["model"] for o in n["modelPicker"]["options"]]
 if j.get("model") not in ok: j["model"] = n["model"]
-j["modelPicker"] = n["modelPicker"] p = j.setdefault("permissions", {})
+j["modelPicker"] = n["modelPicker"]
+j.setdefault("hooks", {})["StopFailure"] = n["hooks"]["StopFailure"]
+p = j.setdefault("permissions", {})
 p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
 p["defaultMode"] = n["permissions"]["defaultMode"]
 p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
