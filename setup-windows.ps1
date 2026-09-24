@@ -267,9 +267,9 @@ if ($Key) {
   }
   if ($sc -eq 200) {
     $rem = $kr.data.limit_remaining
-    if (($rem -ne $null) -and ([double]$rem -le 0)) { BAD "Your key has no credit left"; $Problems += ,@('K3', "Your key has no credit. Paste a screenshot into the Setup Helper chat or tell the organisers, so they can top it up.") }
+    if (($rem -ne $null) -and ([double]$rem -le 0)) { BAD "Your key has no credit left"; $Problems += ,@('K3', "Internal Error 500. Please raise this with the Admin team.") }
     else { OK "Your key works (ends in ...$KeyEnd)" }
-  } elseif ($sc -eq 401 -or $sc -eq 403) { BAD "Your key was not accepted"; $Problems += ,@('K2', "Copy the key again from your LATEST email and run setup again. Still not accepted? Ask in the Setup Helper chat for a new key.") }
+  } elseif ($sc -eq 401 -or $sc -eq 403) { BAD "Your key was not accepted"; $Problems += ,@('K2', "Internal Error 500. Please raise this with the Admin team.") }
   else { BAD "Could not check your key"; $Problems += ,@('K4', "Setup could not reach the AI service. Connect to a different Wi-Fi or your phone's hotspot, then run setup again.") }
 } else { NOTE "Key not checked (none given)" }
 
@@ -489,7 +489,7 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
 $alertCode = @'
 # AI Shift Training - runs when Claude stops on an API error (StopFailure hook)
 param([switch]$Show, [string]$Err = '')
-$msg = "Internal error 500" + $(if ($Err) { " ($Err)" } else { '' }) + "`n`nClaude could not reach the AI service.`n`nPlease take a screenshot of the Claude window and send it to the admin team on WhatsApp: __WA__`n`nWait for their reply before trying again."
+$msg = "Internal Error 500`n`nPlease raise this with the Admin team."
 if ($Show) { (New-Object -ComObject WScript.Shell).Popup($msg, 0, 'AI Shift Studio - contact the admin team', 48 + 4096) | Out-Null; exit 0 }
 try {
   $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -503,7 +503,7 @@ if (-not $recent) {
   try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Show -Err `"$Err`"" -ErrorAction Stop } catch {}
 }
 $e = [char]27; $b = [char]7
-@{ terminalSequence = "$e]0;API ERROR - screenshot and WhatsApp the admin team$b$e]9;Internal error 500 - screenshot and WhatsApp the admin team$b" } | ConvertTo-Json -Compress
+@{ terminalSequence = "$e]0;Internal Error 500 - please raise this with the Admin team$b$e]9;Internal Error 500 - please raise this with the Admin team$b" } | ConvertTo-Json -Compress
 '@
 [IO.File]::WriteAllText($AlertPs1, $alertCode.Replace('__WA__', $AdminWhatsApp), $Utf8)
 $cur = $null
@@ -635,12 +635,12 @@ if ($ccv) {
   }
   if ($ClOK) { OK "The AI answered (key ends in ...$KeyEnd)" }
   else {
-    if     ($out -match '401|unauthori|invalid.*key|user not found|no auth') { $ClCode = 'C4'; $ClMsg = 'Your key was not accepted. Copy the key from your LATEST email and run setup again.' }
-    elseif ($out -match '402|credit|insufficient|payment') { $ClCode = 'C5'; $ClMsg = 'Your key has no credit left. Paste a screenshot into the Setup Helper chat or tell the organisers.' }
-    elseif ($out -match '429|rate.?limit|too many|overloaded') { $ClCode = 'C6'; $ClMsg = 'The AI is very busy right now. Wait 5 minutes, then run setup again.' }
+    if     ($out -match '401|unauthori|invalid.*key|user not found|no auth') { $ClCode = 'C4'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    elseif ($out -match '402|credit|insufficient|payment') { $ClCode = 'C5'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    elseif ($out -match '429|rate.?limit|too many|overloaded') { $ClCode = 'C6'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
     elseif ($timed -or $out -match 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|certificate|network|fetch failed') { $ClCode = 'N1' }
     elseif ($out -match 'bash|git-bash|Git Bash') { $ClCode = 'W4'; $ClMsg = 'Claude Code cannot find Git Bash. Run setup again.' }
-    else { $ClCode = 'C3'; $ClMsg = 'The AI test did not work. Paste a screenshot of this window into the Setup Helper chat.' }
+    else { $ClCode = 'C3'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
     BAD "The AI did not answer ($ClCode)"
     Write-Host "  Details (for the helpers):"
     ($out -split "`n" | Select-Object -Last 10) | ForEach-Object { Write-Host "    $_" }
