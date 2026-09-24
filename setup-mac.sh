@@ -571,7 +571,6 @@ if "$CLAUDE" --version >/dev/null 2>&1; then
     elif [ "$TIMED" = 1 ] || printf '%s' "$OUT" | grep -Eqi 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|certificate|network|fetch failed'; then CL_CODE=N1; CL_MSG="Your internet stopped working during the AI test. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."
     else CL_CODE=C3; CL_MSG="Internal Error 500. Please raise this with the Admin team."; fi
     bad "The AI did not answer ($CL_CODE)"
-    echo "  Details (for the helpers):"; printf '%s\n' "$OUT" | tail -n 10 | sed 's/^/    /'
   fi
 fi
 
