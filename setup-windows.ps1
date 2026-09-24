@@ -642,8 +642,6 @@ if ($ccv) {
     elseif ($out -match 'bash|git-bash|Git Bash') { $ClCode = 'W4'; $ClMsg = 'Claude Code cannot find Git Bash. Run setup again.' }
     else { $ClCode = 'C3'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
     BAD "The AI did not answer ($ClCode)"
-    Write-Host "  Details (for the helpers):"
-    ($out -split "`n" | Select-Object -Last 10) | ForEach-Object { Write-Host "    $_" }
   }
 }
 
