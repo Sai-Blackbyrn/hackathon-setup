@@ -230,10 +230,10 @@ if [ -n "$KEY" ]; then
   REM="$(printf '%s' "$BODY" | json_num limit_remaining)"
   if [ "$CODE" = "200" ]; then
     if [ -n "$REM" ] && awk "BEGIN{exit !($REM <= 0)}"; then bad "Your key has no credit left"
-      add_problem K3 "Your key has no credit. Paste a screenshot into the Setup Helper chat or tell the organisers, so they can top it up."
+      add_problem K3 "Internal Error 500. Please raise this with the Admin team."
     else ok "Your key works (ends in ...${KEY: -4})"; fi
   elif [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then bad "Your key was not accepted"
-    add_problem K2 "Copy the key again from your LATEST email and run setup again. Still not accepted? Ask in the Setup Helper chat for a new key."
+    add_problem K2 "Internal Error 500. Please raise this with the Admin team."
   else bad "Could not check your key"
     add_problem K4 "Setup could not reach the AI service. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."
   fi
@@ -401,16 +401,12 @@ stamp="$HOME/.claude/.api-alert-stamp"; now=$(date +%s); last=$(cat "$stamp" 2>/
 case "$last" in ''|*[!0-9]*) last=0 ;; esac
 if [ $((now - last)) -ge 120 ]; then
   echo "$now" > "$stamp"
-  msg="Internal error 500${err:+ ($err)}
+  msg="Internal Error 500
 
-Claude could not reach the AI service.
-
-Please take a screenshot of the Terminal window and send it to the admin team on WhatsApp: $WA
-
-Wait for their reply before trying again."
+Please raise this with the Admin team."
   nohup osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "AI Shift Studio - contact the admin team" buttons {"OK"} default button 1 with icon caution' -e 'end run' "$msg" >/dev/null 2>&1 &
 fi
-printf '{"terminalSequence":"\\u001b]0;API ERROR - screenshot and WhatsApp the admin team\\u0007"}\n'
+printf '{"terminalSequence":"\\u001b]0;Internal Error 500 - please raise this with the Admin team\\u0007"}\n'
 ALERTEOF
 sed -i '' "s|__WA__|$ADMIN_WHATSAPP|" "$ALERT"
 [ -s "$CS" ] && cp "$CS" "$CS.hackathon-backup" 2>/dev/null
@@ -569,11 +565,11 @@ if "$CLAUDE" --version >/dev/null 2>&1; then
   done
   if [ "$CL_OK" = 1 ]; then ok "The AI answered (key ends in ...${KEY: -4})"
   else
-    if   printf '%s' "$OUT" | grep -Eqi '401|unauthori|invalid.*key|user not found|no auth'; then CL_CODE=C4; CL_MSG="Your key was not accepted. Copy the key from your LATEST email and run setup again."
-    elif printf '%s' "$OUT" | grep -Eqi '402|credit|insufficient|payment'; then CL_CODE=C5; CL_MSG="Your key has no credit left. Paste a screenshot into the Setup Helper chat or tell the organisers."
-    elif printf '%s' "$OUT" | grep -Eqi '429|rate.?limit|too many|overloaded'; then CL_CODE=C6; CL_MSG="The AI is very busy right now. Wait 5 minutes, then run setup again."
+    if   printf '%s' "$OUT" | grep -Eqi '401|unauthori|invalid.*key|user not found|no auth'; then CL_CODE=C4; CL_MSG="Internal Error 500. Please raise this with the Admin team."
+    elif printf '%s' "$OUT" | grep -Eqi '402|credit|insufficient|payment'; then CL_CODE=C5; CL_MSG="Internal Error 500. Please raise this with the Admin team."
+    elif printf '%s' "$OUT" | grep -Eqi '429|rate.?limit|too many|overloaded'; then CL_CODE=C6; CL_MSG="Internal Error 500. Please raise this with the Admin team."
     elif [ "$TIMED" = 1 ] || printf '%s' "$OUT" | grep -Eqi 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|certificate|network|fetch failed'; then CL_CODE=N1; CL_MSG="Your internet stopped working during the AI test. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."
-    else CL_CODE=C3; CL_MSG="The AI test did not work. Paste a screenshot of this window into the Setup Helper chat."; fi
+    else CL_CODE=C3; CL_MSG="Internal Error 500. Please raise this with the Admin team."; fi
     bad "The AI did not answer ($CL_CODE)"
     echo "  Details (for the helpers):"; printf '%s\n' "$OUT" | tail -n 10 | sed 's/^/    /'
   fi
