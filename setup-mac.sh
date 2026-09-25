@@ -1,493 +1,537 @@
-#!/bin/bash
-# AI Shift Training Hackathon - one-command setup (Mac)
+# AI Shift Training Hackathon - one-command setup (Windows PowerShell)
 #
-#   Install:  curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash
-#   Check:    curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash -s -- --check
+#   Install:  irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex
+#   Check:    $env:HACK_CHECK='1'; irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex
 #
 # What it installs:
-#   Needed:    Git (via Apple's developer tools / Homebrew, only if missing), GitHub CLI, Claude Code
+#   Needed:    Git (with Git Bash), GitHub CLI, Claude Code
 #   Nice to have (setup carries on without them): Node.js, Python, the UI/UX Pro Max design skill
-# GitHub CLI, Node.js and Python are downloaded straight into your home folder: no password,
-# and no slow Homebrew builds on older macOS versions.
+# Tools are downloaded into your own folder first, so there are no Windows permission popups.
+# Only if a download fails does setup try the Windows installer (winget), which shows popups.
 #
 # Every run ends with "Your Setup Is Complete" or FAIL <code> + what to do.
-# Safe to run again any number of times. Written for macOS /bin/bash 3.2.
+# Safe to run again any number of times. Written for Windows PowerShell 5.1.
+# Never calls "exit": with "irm | iex" that would close the student's window.
 
-# Everything is inside main() so bash reads the whole script before running any of it.
-main() {
-set -u
+function Invoke-HackathonSetup {
+$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'   # much faster downloads in PowerShell 5.1
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
 # ---------- Pinned versions (tested for this event) ----------
-CC_VERSION="2.1.278"     # Claude Code
-UIPRO_VERSION="2.15.0"   # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.cc)
-GH_VERSION="2.101.0"     # GitHub CLI
-UV_VERSION="0.12.17"     # uv (installs Python)
-NODE_LINE="latest-v22.x" # Node.js 22 LTS
-MODEL="@preset/hackathon-primary"        # primary model = OpenRouter preset (change the model in the preset, not here)
-FAST_MODEL="openai/gpt-5.4-mini"         # small background jobs and sub-agents (GPT-5.4 mini on Azure)
-ADMIN_WHATSAPP="+000 0000 0000"          # admin team WhatsApp, shown in the "Internal error 500" popup
-MIN_MACOS=13; MIN_NODE=18; MIN_GH="2.40.0"; MIN_DISK_GB=5
+$CcVersion    = '2.1.278'                 # Claude Code
+$UiproVersion = '2.15.0'                  # ui-ux-pro-max-cli (UI/UX Pro Max design skills, uupm.cc)
+$GhVersion    = '2.101.0'                 # GitHub CLI
+$GitTag       = 'v2.55.0.windows.5'; $GitVer = '2.55.0.5'   # Git for Windows (PortableGit)
+$UvVersion    = '0.12.17'                 # uv (installs Python)
+$NodeLine     = 'latest-v22.x'            # Node.js 22 LTS
+$Model        = '@preset/hackathon-primary'    # primary model = OpenRouter preset (change the model in the preset, not here)
+$FastModel    = 'openai/gpt-5.4-mini'          # small background jobs and sub-agents (GPT-5.4 mini on Azure)
+$MinBuild = 17763; $MinNode = 18; $MinDiskGB = 5
+$NetTries = 18; if ($env:HACK_NET_TRIES) { $NetTries = [int]$env:HACK_NET_TRIES }
 
-SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash"
-HELP_CHAT="https://chat.aishifttraining.com"
-DIR="$HOME/claude-hackathon"
-TOOLS="$HOME/.local/hackathon-tools"      # Node.js and Python for Claude only
-TBIN="$TOOLS/bin"
-LOG="$DIR/setup-log.txt"
-MODE="install"; GROUP="${HACKATHON_GROUP:-}"
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --check) MODE="check" ;;
-    --group) GROUP="${2:-}"; shift ;;
-    --group=*) GROUP="${1#--group=}" ;;
-  esac
-  shift
-done
+$SetupCmd = 'irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex'
+$HelpChat = 'https://chat.aishifttraining.com'
+$Mode = 'install'; if ($env:HACK_CHECK -eq '1') { $Mode = 'check' }
+Remove-Item Env:HACK_CHECK -ErrorAction SilentlyContinue
 # Group (girls / boys) comes from the command in the student's email; it is remembered for re-runs.
-GROUP_FILE="$HOME/.claude/hackathon-group"
-GROUP="$(printf '%s' "$GROUP" | tr '[:upper:]' '[:lower:]')"
-case "$GROUP" in girls|boys) ;; *) GROUP="$(cat "$GROUP_FILE" 2>/dev/null | tr -d '[:space:]')" ;; esac
-case "$GROUP" in girls|boys) MODEL="@preset/hackathon-$GROUP" ;; *) GROUP="" ;; esac
-[ -n "$GROUP" ] && SETUP_CMD="curl -fsSL https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-mac.sh | bash -s -- --group $GROUP"
-STEP="starting"; FAILED=0; NOTES=""
+$GroupFile = "$env:USERPROFILE\.claude\hackathon-group"
+$Group = ("$env:HACK_GROUP").Trim().ToLower()
+Remove-Item Env:HACK_GROUP -ErrorAction SilentlyContinue
+if ($Group -notin @('girls','boys') -and (Test-Path $GroupFile)) { $Group = ((Get-Content $GroupFile -ErrorAction SilentlyContinue | Select-Object -First 1) + '').Trim().ToLower() }
+if ($Group -in @('girls','boys')) {
+  $Model = "@preset/hackathon-$Group"
+  $SetupCmd = "`$env:HACK_GROUP='$Group'; irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex"
+} else { $Group = '' }
+$script:Step = 'starting'
+$Notes = @()
 
 # ---------- Colours ----------
-# Every colour works on light AND dark Terminal backgrounds (important messages use a coloured box):
-# step titles = white on blue | do this now = black on yellow | tips & fixes = black on light blue
-# errors = white on red | progress = bold | OK = green
-G=$'\033[1;32m'; B=$'\033[1m'; N=$'\033[0m'
-TAG_FAIL=$'\033[1;97;41m'; FIX=$'\033[1;30;106m'; INST=$'\033[1m'; STEPC=$'\033[1;97;44m'; ACT=$'\033[1;30;103m'; OKC=$'\033[1;32m'; TAG_WARN=$'\033[1;30;43m'; DONE=$'\033[1;30;42m'
-ok()    { printf "  ${OKC}OK${N}   %s\n" "$1"; }
-bad()   { printf "  ${TAG_FAIL} FAIL ${N} %s\n" "$1"; }
-warn()  { printf "  ${TAG_WARN} NOTE ${N} %s\n" "$1"; }
-act()   { printf "${ACT} %s ${N}\n" "$1"; }
-fixmsg(){ printf "${FIX} %s ${N}\n" "$1"; }
-step()  { printf "\n${STEPC} STEP %s  -  %s ${N}\n" "$1" "$2"; }   # step "3 of 9" "Git (about 2 minutes)"
-note_skip() { NOTES="$NOTES
-  - $1"; warn "$1"; }
-show_cmd() { printf "\n${ACT} Copy this line, paste it in Terminal, press Return: ${N}\n\n    %s\n\n" "$1"; }
-
-fail() {  # fail CODE "what happened and what to do" [command to show]
-  FAILED=1
-  printf "\n${TAG_FAIL} FAIL %s ${N}\n${FIX}%s${N}\n" "$1" "$2"
-  [ -n "${3:-}" ] && show_cmd "$3"
-  printf "\nStill stuck? Take a screenshot of this window and paste it into the Setup Helper chat:\n  ${B}%s${N}  (sign up with the link in your email)\n" "$HELP_CHAT"
-  sleep 1; exit 1
+# installing = cyan | do this now = black on yellow | error = white on red | fix = yellow
+function OK($t)   { Write-Host "  OK   $t" -ForegroundColor Green }
+function TAG($t, $bg) { Write-Host " $t " -ForegroundColor White -BackgroundColor $bg -NoNewline }
+function BAD($t)  { Write-Host "  " -NoNewline; TAG 'FAIL' 'DarkRed'; Write-Host " $t" }
+function NOTE($t) { Write-Host "  " -NoNewline; Write-Host " NOTE " -ForegroundColor Black -BackgroundColor DarkYellow -NoNewline; Write-Host " $t" }
+function ACT($t)  { Write-Host " $t " -ForegroundColor Black -BackgroundColor Yellow }
+function FIXT($t) { Write-Host " $t " -ForegroundColor Black -BackgroundColor Cyan }
+function INST($t) { Write-Host $t -ForegroundColor White }
+function STEPH($n, $t) { Write-Host ""; Write-Host " STEP $n  -  $t " -ForegroundColor White -BackgroundColor DarkBlue }
+function SKIP($t) { $script:Notes += $t; NOTE $t }
+function Show-Cmd($c) {
+  Write-Host ""; ACT "Copy this line, paste it in PowerShell (right-click to paste), press Enter:"
+  Write-Host ""; Write-Host "    $c"; Write-Host ""
 }
-net_fail() {
-  fail N1 "Your internet stopped working, so setup could not download what it needs.
-1. Connect to a different Wi-Fi or your phone's hotspot.
-2. Run setup again with the command below. It continues where it stopped." "$SETUP_CMD"
+function Fail($code, $msg, $cmd) {
+  Write-Host ""
+  TAG "FAIL $code" 'DarkRed'; Write-Host ""
+  FIXT $msg
+  if ($cmd) { Show-Cmd $cmd }
+  Write-Host ""
+  Write-Host "Still stuck? Take a screenshot of this window and paste it into the Setup Helper chat:"
+  Write-Host "  $HelpChat  (sign up with the link in your email)" -ForegroundColor White
+  throw "HACKATHON_FAIL"
 }
-trap 'st=$?; if [ $st -ne 0 ] && [ "$FAILED" = 0 ]; then printf "\n${TAG_FAIL} FAIL X1 ${N}\n${FIX}Setup stopped during: %s.\nRun setup again. It continues where it stopped.${N}\n" "$STEP"; show_cmd "$SETUP_CMD"; fi' EXIT
+function NetFail {
+  Fail N1 "Your internet stopped working, so setup could not download what it needs.`n1. Connect to a different Wi-Fi or your phone's hotspot.`n2. Run setup again with the command below. It continues where it stopped." $SetupCmd
+}
 
 # ---------- Internet: wait and retry instead of failing ----------
-net_ok() { curl -s -o /dev/null -m 10 -I https://github.com; }
-wait_net() {   # waits up to about 3 minutes for the internet to come back
-  net_ok && return 0
-  printf "${TAG_WARN} Internet problem. ${N} ${FIX}Waiting for your internet to come back... (check your Wi-Fi)${N}\n"
-  i=0
-  while [ $i -lt "${NET_WAIT_TRIES:-18}" ]; do sleep "${NET_WAIT_SECS:-10}"; net_ok && { ok "Internet is back"; return 0; }; i=$((i+1)); done
-  return 1
+function Test-Net {
+  try { Invoke-WebRequest -Uri 'https://github.com' -Method Head -UseBasicParsing -TimeoutSec 10 | Out-Null; return $true }
+  catch { return [bool]$_.Exception.Response }
 }
-retry() {      # retry "what" command... : tries 3 times, waiting for the internet in between
-  what="$1"; shift; n=1
-  while :; do
-    "$@" && return 0
-    [ $n -ge 3 ] && return 1
-    printf "${FIX}%s did not work (try %s of 3). Trying again in 10 seconds...${N}\n" "$what" "$n"
-    wait_net || return 1
-    sleep 10; n=$((n+1))
-  done
+function Wait-Net {
+  if (Test-Net) { return $true }
+  TAG 'Internet problem.' 'DarkYellow'; FIXT ' Waiting for your internet to come back... (check your Wi-Fi)'
+  for ($i = 0; $i -lt $NetTries; $i++) { Start-Sleep -Seconds 10; if (Test-Net) { OK 'Internet is back'; return $true } }
+  return $false
 }
-download() { curl -fL --retry 2 --connect-timeout 20 -o "$2" "$1" && [ -s "$2" ]; }
+function Invoke-Retry($what, [scriptblock]$sb) {
+  for ($n = 1; $n -le 3; $n++) {
+    $r = $false
+    try { $r = [bool](& $sb | Select-Object -Last 1) } catch { $r = $false }
+    $ErrorActionPreference = 'Continue'
+    if ($r) { return $true }
+    if ($n -lt 3) {
+      FIXT "$what did not work (try $n of 3). Trying again in 10 seconds..."
+      if (-not (Wait-Net)) { return $false }
+      Start-Sleep -Seconds 10
+    }
+  }
+  return $false
+}
+function Get-File($url, $out) {
+  try { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -TimeoutSec 900; return ((Test-Path $out) -and ((Get-Item $out).Length -gt 1000)) }
+  catch { return $false }
+}
 
-mkdir -p "$DIR" "$TBIN" "$HOME/.local/bin" || fail P8 "Setup could not make its folder. Restart your Mac, then run setup again." "$SETUP_CMD"
-: < /dev/tty 2>/dev/null || fail P7 "Please run setup in the Terminal app.
-Press Cmd + Space, type Terminal, press Return, and paste the command there." "$SETUP_CMD"
+# ---------- Folders ----------
+# Usernames with Arabic letters or spaces (C:\Users\محمد, C:\Users\Ahmed Ali) break paths in some tools.
+# For those users, the work folder and the tools go to C:\ instead.
+$ProfileUnsafe = ($env:USERPROFILE -match '[^\x21-\x7E]')
+$Dir = "$env:USERPROFILE\claude-hackathon"; $Tools = "$env:LOCALAPPDATA\hackathon-tools"
+if ($ProfileUnsafe) {
+  try { New-Item -ItemType Directory -Force -Path 'C:\claude-hackathon', 'C:\hackathon-tools' -ErrorAction Stop | Out-Null; $Dir = 'C:\claude-hackathon'; $Tools = 'C:\hackathon-tools' } catch {}
+}
+$script:Dir = $Dir
+$Shim = "$env:USERPROFILE\.claude-hackathon-bin"
+$ClaudeExe = "$env:USERPROFILE\.local\bin\claude.exe"
+try { New-Item -ItemType Directory -Force -Path "$Dir\.claude", "$Dir\.tmp", $Tools -ErrorAction Stop | Out-Null }
+catch { Fail P8 "Setup could not make its folder. Restart your laptop, then run setup again." $SetupCmd }
+$env:UV_CACHE_DIR = "$Tools\uv-cache"; $env:UV_PYTHON_INSTALL_DIR = "$Tools\python"; $env:npm_config_cache = "$Tools\npm-cache"
+$Arch = $env:PROCESSOR_ARCHITECTURE
 
-# ---------- Helpers ----------
-ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = "$2" ]; }
-have_clt() { xcode-select -p >/dev/null 2>&1; }
-real_cmd() {  # /usr/bin/git and python3 are Apple stubs that pop up a window if developer tools are missing
-  p="$(command -v "$1" 2>/dev/null)" || return 1
-  case "$p" in /usr/bin/*) have_clt || return 1 ;; esac
-  printf '%s' "$p"
+# ---------- Finding tools ----------
+function Refresh-Path {
+  $py = Find-PythonDir
+  $env:Path = "$Shim;$env:USERPROFILE\.local\bin;$Tools\git\cmd;$Tools\gh\bin;$Tools\node;$Tools\npm;" + $(if ($py) { "$py;$py\Scripts;" } else { '' }) +
+    [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') +
+    ";C:\Program Files\Git\cmd;C:\Program Files\GitHub CLI;C:\Program Files\nodejs;$env:APPDATA\npm"
 }
-json_num() { sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9.eE+-]*\).*/\1/p" | head -n1; }
-find_brew() {
-  BREW="$(command -v brew 2>/dev/null || true)"
-  [ -z "$BREW" ] && [ -x /opt/homebrew/bin/brew ] && BREW=/opt/homebrew/bin/brew
-  [ -z "$BREW" ] && [ -x /usr/local/bin/brew ] && BREW=/usr/local/bin/brew
-  [ -n "$BREW" ] && eval "$("$BREW" shellenv 2>/dev/null)"
-  return 0
+function Find-GitBash {
+  $c = @("$Tools\git\bin\bash.exe")
+  $g = Get-Command git -ErrorAction SilentlyContinue
+  if ($g) { $c += (Join-Path (Split-Path (Split-Path $g.Source)) 'bin\bash.exe') }
+  $c += 'C:\Program Files\Git\bin\bash.exe', "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+  foreach ($p in $c) { if ($p -and (Test-Path $p)) { return $p } }
+  return $null
 }
-check_tools() {
-  export PATH="$TBIN:$HOME/.local/bin:$PATH"; hash -r
-  GIT="$(real_cmd git || true)"
-  GH="$(command -v gh 2>/dev/null || true)"
-  if [ -n "$GH" ] && ! ver_ge "$("$GH" --version 2>/dev/null | head -n1 | awk '{print $3}')" "$MIN_GH"; then GH=""; fi
-  NODE="$(command -v node 2>/dev/null || true)"
-  if [ -n "$NODE" ] && ! [ "$("$NODE" -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge "$MIN_NODE" ] 2>/dev/null; then NODE=""; fi
-  PY=""
-  for c in python3.12 python3.13 python3.11 python3.10 python3; do
-    p="$(real_cmd "$c" || true)"
-    if [ -n "$p" ] && "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1; then PY="$p"; break; fi
-  done
-  return 0
+function Test-PyExe($exe) {
+  if (-not $exe -or -not (Test-Path $exe)) { return $false }
+  try { return ((& $exe -c "import sys; print(sys.version_info >= (3,10))" | Out-String).Trim() -eq 'True') } catch { return $false }
 }
-existing_key() { cat "$HOME/.claude/settings.json" "$DIR/.claude/settings.local.json" 2>/dev/null | sed -n 's/.*"ANTHROPIC_AUTH_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1; }
-ARCH="$(uname -m)"
+function Find-PythonDir {
+  $c = @()
+  if (Test-Path "$Tools\python-path.txt") { $c += (Get-Content "$Tools\python-path.txt" -ErrorAction SilentlyContinue | Select-Object -First 1) }
+  $c += "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe", "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+  foreach ($p in $c) { if (Test-PyExe $p) { return (Split-Path $p) } }
+  return $null
+}
+function Node-Major { try { return [int]((& node -v) -replace '^v','').Split('.')[0] } catch { return 0 } }
+function Test-Tools {
+  Refresh-Path
+  $s = @{}
+  $s.git    = [bool](Get-Command git -ErrorAction SilentlyContinue) -and [bool](Find-GitBash)
+  $s.gh     = [bool](Get-Command gh -ErrorAction SilentlyContinue)
+  $s.node   = ((Node-Major) -ge $MinNode)
+  $s.python = [bool](Find-PythonDir)
+  return $s
+}
+function Winget-Install($id, $name, $extra) {   # backup plan: the Windows installer (shows permission popups)
+  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $false }
+  INST "Trying the Windows installer for $name instead..."
+  ACT "A Windows popup will ask 'Do you want to allow this app to make changes?'. Click YES."
+  ACT "No popup? Look for a flashing shield icon on the taskbar and click it."
+  $wa = @('install', '--id', $id, '-e', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements') + $extra
+  & winget @wa
+  $ErrorActionPreference = 'Continue'
+  return $true
+}
 
-# ===================================================================================
-echo ""
-printf "${B}==== AI Shift Training - Hackathon Setup ====${N}\n"
-if [ "$MODE" = "check" ]; then echo "Check mode: nothing gets installed or changed."
-else
-  echo "Setup has 9 steps. It takes about 10-15 minutes (up to 30 minutes on a brand-new Mac)."
-  act "Keep this window open and your Mac plugged in. Don't close the lid."
-fi
+Write-Host ""
+Write-Host "==== AI Shift Training - Hackathon Setup ====" -ForegroundColor White
+if ($Mode -eq 'check') { Write-Host "Check mode: nothing gets installed or changed." }
+else {
+  Write-Host "Setup has 9 steps. It takes about 10-15 minutes."
+  ACT "Keep this window open and your laptop plugged in."
+}
 
 # ---------- STEP 1: key ----------
-STEP="reading your key"
-if [ "$MODE" = "check" ]; then
-  KEY="$(existing_key)"
-  if [ -z "$KEY" ]; then
-    act "No key found yet. Paste your key to test it, or just press Return to skip."
-    printf "Key: "; IFS= read -rs KEY < /dev/tty; echo
-  fi
-else
-  step "1 of 9" "Your hackathon key (about 1 minute)"
-  if [ -n "${HACKATHON_KEY:-}" ]; then KEY="$HACKATHON_KEY"
-  else
-    echo "1. Open the email we sent you and copy your key. It starts with sk-or-v1-"
-    echo "2. Click in this window and press Cmd + V to paste it."
-    echo "3. Press Return."
-    fixmsg "You will NOT see the key when you paste. That's normal. Just press Return."
-    printf "Key: "; IFS= read -rs KEY < /dev/tty; echo
-  fi
-fi
-KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
-if [ "$MODE" = "install" ]; then
-  case "$KEY" in
-    sk-or-v1-*) ok "Key received (it ends in ...${KEY: -4})" ;;
-    "") fail K1 "No key was pasted. Run setup again. When it asks for the key, press Cmd + V, then Return." "$SETUP_CMD" ;;
-    *)  fail K1 "That is not the hackathon key. Copy the WHOLE key from your email (it starts with sk-or-v1-), then run setup again." "$SETUP_CMD" ;;
-  esac
-fi
-
-# From here on, what you see is also saved in claude-hackathon/setup-log.txt (the key is never saved).
-exec > >(tee -a "$LOG") 2>&1
-echo ""; echo "---- $(date) mode=$MODE user=$(whoami) macOS=$(sw_vers -productVersion 2>/dev/null) arch=$ARCH ----"
-
-# ---------- STEP 2: check the Mac ----------
-STEP="checking your Mac"
-[ "$MODE" = "install" ] && step "2 of 9" "Checking your Mac (about 1 minute)"
-[ "$MODE" = "check" ] && step "check" "Checking your Mac (about 1 minute)"
-PROBLEMS=""
-add_problem() { PROBLEMS="$PROBLEMS
-${TAG_FAIL} FAIL $1 ${N} ${FIX}$2${N}"; }
-
-MACOS="$(sw_vers -productVersion 2>/dev/null)"
-if [ "${MACOS%%.*}" -ge "$MIN_MACOS" ] 2>/dev/null; then ok "macOS $MACOS"
-else bad "macOS $MACOS is too old"; add_problem P1 "Your Mac needs macOS 13 or newer. Update it (System Settings > General > Software Update) or use another laptop."; fi
-
-if [ "$ARCH" = "x86_64" ] && [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]; then
-  bad "Terminal is in Rosetta mode"
-  add_problem P6 "Quit Terminal. Open Finder > Applications > Utilities. Right-click Terminal > Get Info. Untick 'Open using Rosetta'. Then run setup again."
-else ok "Processor: $ARCH"; fi
-
-IS_ADMIN=0; id -Gn | tr ' ' '\n' | grep -qx admin && IS_ADMIN=1
-FREE_GB=$(( $(df -k "$HOME" | awk 'NR==2{print $4}') / 1024 / 1024 ))
-if [ "$FREE_GB" -ge "$MIN_DISK_GB" ]; then ok "Free space: ${FREE_GB} GB"
-else bad "Free space: only ${FREE_GB} GB"; add_problem P3 "Your Mac needs 5 GB of free space. Delete big files or empty the Bin, then run setup again."; fi
-
-if ! net_ok; then wait_net || net_fail; fi
-BLOCKED=""
-for h in github.com api.github.com raw.githubusercontent.com objects.githubusercontent.com claude.ai openrouter.ai registry.npmjs.org nodejs.org; do
-  curl -sS -o /dev/null -m 20 -I "https://$h" >/dev/null 2>&1 || curl -sS -o /dev/null -m 20 -I "https://$h" >/dev/null 2>&1 || BLOCKED="$BLOCKED $h"
-done
-if [ -z "$BLOCKED" ]; then ok "Internet: all download sites work"
-else bad "Internet: these sites are blocked:$BLOCKED"; add_problem P4 "Your internet blocks some download sites. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."; fi
-
-SRV="$(curl -sI -m 15 https://github.com 2>/dev/null | tr -d '\r' | sed -n 's/^[Dd]ate: //p')"
-if [ -n "$SRV" ]; then
-  S=$(LC_ALL=C date -j -u -f "%a, %d %b %Y %T GMT" "$SRV" +%s 2>/dev/null || echo 0)
-  L=$(date -u +%s); D=$(( S > L ? S - L : L - S ))
-  if [ "$S" -gt 0 ] && [ "$D" -gt 600 ]; then bad "Clock is wrong"
-    add_problem P5 "Open System Settings > General > Date & Time and turn on 'Set time and date automatically'. Then run setup again."
-  else ok "Clock"; fi
-fi
-
-if [ -n "$KEY" ]; then
-  CODE=""; BODY=""
-  for t in 1 2 3; do
-    RESP="$(curl -sS -m 30 -w $'\n%{http_code}' -H "Authorization: Bearer $KEY" https://openrouter.ai/api/v1/key 2>/dev/null)"
-    CODE="$(printf '%s' "$RESP" | tail -n1)"; BODY="$(printf '%s' "$RESP" | sed '$d')"
-    case "$CODE" in 200|401|403) break ;; esac
-    wait_net || break; sleep 5
-  done
-  REM="$(printf '%s' "$BODY" | json_num limit_remaining)"
-  if [ "$CODE" = "200" ]; then
-    if [ -n "$REM" ] && awk "BEGIN{exit !($REM <= 0)}"; then bad "Your key has no credit left"
-      add_problem K3 "Internal Error 500. Please raise this with the Admin team."
-    else ok "Your key works (ends in ...${KEY: -4})"; fi
-  elif [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then bad "Your key was not accepted"
-    add_problem K2 "Internal Error 500. Please raise this with the Admin team."
-  else bad "Could not check your key"
-    add_problem K4 "Setup could not reach the AI service. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."
-  fi
-else warn "Key not checked (none given)"; fi
-
-find_brew; check_tools
-[ -n "$GIT" ] && ok "Git is already installed" || warn "Git is not installed yet"
-if [ "$MODE" = "install" ] && [ -z "$GIT" ] && [ "$IS_ADMIN" = 0 ]; then
-  add_problem P2 "This Mac account is not an administrator, and Git needs one to install. Log out, log in with the administrator account (System Settings > Users & Groups shows 'Admin'), then run setup again."
-fi
-
-if [ -n "$PROBLEMS" ]; then
-  printf "\n${B}Please fix these, then run setup again:${N}%s\n" "$PROBLEMS"
-  if [ "$MODE" = "install" ]; then FAILED=1; show_cmd "$SETUP_CMD"; printf "Stuck? Paste a screenshot into the Setup Helper chat: ${B}%s${N}\n" "$HELP_CHAT"; sleep 1; exit 1; fi
-fi
-
-# ===================================================================================
-if [ "$MODE" = "install" ]; then
-
-# ---------- STEP 3: Git (needed) ----------
-STEP="installing Git"
-step "3 of 9" "Git (already there: a few seconds / new Mac: about 10-15 minutes)"
-if [ -n "$GIT" ]; then ok "Git is already installed. Skipping this step."
-else
-  echo "Git comes with Apple's developer tools. Setup installs them with Homebrew."
-  act "Type your Mac login password and press Return."
-  fixmsg "You will NOT see the password while you type. That's normal."
-  sudo -v < /dev/tty || fail H3 "Your Mac password was not accepted. Use the password you log in to this Mac with.
-No password on this Mac? Set one in System Settings > Users & Groups. Then run setup again." "$SETUP_CMD"
-  ( while kill -0 $$ 2>/dev/null; do sudo -n true 2>/dev/null; sleep 50; done ) &
-  if [ -z "$BREW" ]; then
-    printf "${INST}Installing Homebrew and Apple's developer tools (about 10-15 minutes, up to 30 on a new Mac)...${N}\n"
-    act "It can look stuck for a few minutes. That's normal. Keep the window open."
-    inst_brew() { HBI="$(mktemp)"; download https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh "$HBI" && NONINTERACTIVE=1 /bin/bash "$HBI" < /dev/null; r=$?; rm -f "$HBI"; return $r; }
-    retry "Installing Homebrew" inst_brew || true
-    find_brew
-    [ -n "$BREW" ] && { grep -q "brew shellenv" "$HOME/.zprofile" 2>/dev/null || echo "eval \"\$($BREW shellenv)\"" >> "$HOME/.zprofile"; }
-  fi
-  check_tools
-  if [ -z "$GIT" ]; then
-    # Fallback: Apple's own installer for the developer tools (a window opens).
-    printf "${INST}Trying Apple's installer instead...${N}\n"
-    xcode-select --install >/dev/null 2>&1 || true
-    act "A window may pop up asking to install 'command line developer tools'. Click Install, then Agree."
-    act "Wait until that window says it's done (about 10 minutes). Then press Return here."
-    IFS= read -r _ < /dev/tty
-    check_tools
-  fi
-  if [ -z "$GIT" ]; then
-    net_ok || net_fail
-    fail T1 "Git could not be installed. Run this in Terminal, click Install in the window that opens, wait until it's done, then run setup again:
-  xcode-select --install" "$SETUP_CMD"
-  fi
-  ok "Git installed"
-fi
-
-# ---------- STEP 4: GitHub CLI (needed to publish your website) ----------
-STEP="installing GitHub CLI"
-step "4 of 9" "GitHub tool (about 1 minute)"
-if [ -n "$GH" ]; then ok "GitHub tool is already installed. Skipping this step."
-else
-  case "$ARCH" in arm64) GA=arm64 ;; *) GA=amd64 ;; esac
-  GZ="$TOOLS/gh.zip"
-  get_gh() { download "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_$GA.zip" "$GZ" \
-             && rm -rf "$TOOLS/gh" && mkdir -p "$TOOLS/gh" && unzip -oq "$GZ" -d "$TOOLS/gh" \
-             && ln -sf "$TOOLS/gh/gh_${GH_VERSION}_macOS_$GA/bin/gh" "$HOME/.local/bin/gh"; }
-  printf "${INST}Downloading the GitHub tool...${N}\n"
-  retry "Downloading the GitHub tool" get_gh || true
-  rm -f "$GZ"; check_tools
-  if [ -z "$GH" ] && [ -n "$BREW" ] && [ -w "$("$BREW" --prefix)/bin" ]; then
-    printf "${INST}Trying Homebrew instead...${N}\n"
-    HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 "$BREW" install gh < /dev/null || true
-    check_tools
-  fi
-  if [ -z "$GH" ]; then net_ok || net_fail
-    fail T2 "The GitHub tool could not be installed. Run setup again. If it fails again, paste a screenshot into the Setup Helper chat." "$SETUP_CMD"; fi
-  ok "GitHub tool installed"
-fi
-
-# ---------- STEP 5: Node.js and Python (nice to have, used by the design skill) ----------
-STEP="installing Node.js and Python"
-step "5 of 9" "Node.js and Python (about 2-4 minutes)"
-if [ -n "$NODE" ]; then ok "Node.js is already installed. Skipping it."
-else
-  case "$ARCH" in arm64) NA=arm64 ;; *) NA=x64 ;; esac
-  get_node() {
-    F="$(curl -fsSL "https://nodejs.org/dist/$NODE_LINE/SHASUMS256.txt" | awk "/darwin-$NA.tar.gz/{print \$2}")" && [ -n "$F" ] \
-      && download "https://nodejs.org/dist/$NODE_LINE/$F" "$TOOLS/node.tgz" \
-      && rm -rf "$TOOLS/node" && mkdir -p "$TOOLS/node" && tar -xzf "$TOOLS/node.tgz" -C "$TOOLS/node" --strip-components=1 \
-      && ln -sf "$TOOLS/node/bin/node" "$TOOLS/node/bin/npm" "$TOOLS/node/bin/npx" "$TBIN/"
+$script:Step = 'reading your key'
+$Key = ''
+$SettingsFile = "$env:USERPROFILE\.claude\settings.json"     # user settings: key + rules work in every folder
+$OldSettings = "$Dir\.claude\settings.local.json"
+if ($Mode -eq 'check') {
+  foreach ($sf in @($SettingsFile, $OldSettings)) { if (-not $Key -and (Test-Path $sf)) { try { $Key = ((Get-Content $sf -Raw | ConvertFrom-Json).env.ANTHROPIC_AUTH_TOKEN) } catch {} } }
+  if (-not $Key) {
+    ACT "No key found yet. Paste your key to test it (right-click), or just press Enter to skip."
+    $sec = Read-Host "Key" -AsSecureString
+    $Key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
   }
-  printf "${INST}Downloading Node.js...${N}\n"
-  retry "Downloading Node.js" get_node || true
-  rm -f "$TOOLS/node.tgz"; check_tools
-  [ -n "$NODE" ] && ok "Node.js installed" || note_skip "Node.js did not install. Setup continues without it (the design skill will be skipped)."
-fi
-if [ -n "$PY" ]; then ok "Python is already installed. Skipping it."
-else
-  case "$ARCH" in arm64) UA=aarch64 ;; *) UA=x86_64 ;; esac
-  get_py() {
-    download "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$UA-apple-darwin.tar.gz" "$TOOLS/uv.tgz" \
-      && tar -xzf "$TOOLS/uv.tgz" -C "$TOOLS" && cp "$TOOLS/uv-$UA-apple-darwin/uv" "$TBIN/uv" \
-      && UV_PYTHON_INSTALL_DIR="$TOOLS/python" "$TBIN/uv" python install 3.12 --no-bin < /dev/null \
-      && P="$(UV_PYTHON_INSTALL_DIR="$TOOLS/python" "$TBIN/uv" python find 3.12)" && [ -x "$P" ] \
-      && ln -sf "$P" "$TBIN/python3.12" && ln -sf "$P" "$TBIN/python3"
-  }
-  printf "${INST}Downloading Python...${N}\n"
-  retry "Downloading Python" get_py || true
-  rm -rf "$TOOLS/uv.tgz" "$TOOLS"/uv-*-apple-darwin; check_tools
-  [ -n "$PY" ] && ok "Python installed" || note_skip "Python did not install. Setup continues without it."
-fi
+} else {
+  STEPH '1 of 9' 'Your hackathon key (about 1 minute)'
+  Write-Host "1. Open the email we sent you and copy your key. It starts with sk-or-v1-"
+  Write-Host "2. Click in this window and RIGHT-CLICK to paste it (or press Ctrl + V)."
+  Write-Host "3. Press Enter."
+  FIXT "You will only see ***** when you paste. That's normal. Just press Enter."
+  $sec = Read-Host "Key" -AsSecureString
+  $Key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+}
+$Key = ("$Key" -replace '\s', '')
+if ($Mode -eq 'install') {
+  if (-not $Key) { Fail K1 "No key was pasted. Run setup again. When it asks for the key, right-click to paste, then press Enter." $SetupCmd }
+  if (-not $Key.StartsWith('sk-or-v1-')) { Fail K1 "That is not the hackathon key. Copy the WHOLE key from your email (it starts with sk-or-v1-), then run setup again." $SetupCmd }
+  OK "Key received (it ends in ...$($Key.Substring($Key.Length-4)))"
+}
+$KeyEnd = if ($Key.Length -ge 4) { $Key.Substring($Key.Length-4) } else { '' }
 
-# ---------- STEP 6: Claude Code (needed) ----------
-STEP="installing Claude Code"
-step "6 of 9" "Claude Code (about 1-2 minutes)"
-CLAUDE="$HOME/.local/bin/claude"
-HAVE_CC="$("$CLAUDE" --version 2>/dev/null | awk '{print $1}')"
-if [ -n "$HAVE_CC" ] && ver_ge "$HAVE_CC" "$CC_VERSION"; then ok "Claude Code $HAVE_CC is already installed. Skipping this step."
-else
-  get_cc() { CCI="$(mktemp)"; download https://claude.ai/install.sh "$CCI" && { bash "$CCI" "$CC_VERSION" < /dev/null || bash "$CCI" latest < /dev/null; }; r=$?; rm -f "$CCI"; [ $r = 0 ] && [ -x "$CLAUDE" ]; }
-  printf "${INST}Downloading Claude Code...${N}\n"
-  retry "Installing Claude Code" get_cc || true
-  if [ ! -x "$CLAUDE" ]; then net_ok || net_fail
-    fail C1 "Claude Code could not be installed. Run setup again. If it fails again, paste a screenshot into the Setup Helper chat." "$SETUP_CMD"; fi
-  "$CLAUDE" --version >/dev/null 2>&1 || fail C2 "Claude Code is installed but won't start. Restart your Mac, then run setup again." "$SETUP_CMD"
-  ok "Claude Code installed"
-fi
+# From here on, what you see is also saved in setup-log.txt (the key is never saved).
+try { Start-Transcript -Path "$Dir\setup-log.txt" -Append | Out-Null; $script:Transcript = $true } catch {}
 
-# ---------- STEP 7: design skill (nice to have) ----------
-STEP="installing the design skill"
-step "7 of 9" "Design skill (about 1 minute)"
-mkdir -p "$DIR/.claude"
-if [ -f "$HOME/.claude/skills/design-system/SKILL.md" ]; then ok "Design skill is already installed. Skipping this step."
-elif [ -z "$NODE" ]; then note_skip "Design skill skipped (it needs Node.js). Claude Code still works."
-else
-  # Older setups installed the retired "uipro-cli" package, which owns the same "uipro" command. Remove it first,
-  # otherwise npm stops with "EEXIST: file already exists".
-  "$(dirname "$NODE")/npm" uninstall -g --prefix "$HOME/.local" uipro-cli --no-fund --no-audit < /dev/null >/dev/null 2>&1 || true
-  [ -f "$HOME/.local/lib/node_modules/ui-ux-pro-max-cli/package.json" ] || rm -f "$HOME/.local/bin/uipro"
-  get_skill() { "$(dirname "$NODE")/npm" install -g --prefix "$HOME/.local" "ui-ux-pro-max-cli@$UIPRO_VERSION" --no-fund --no-audit < /dev/null \
-                && ( cd "$DIR" && { "$HOME/.local/bin/uipro" init --ai claude --global --force --offline < /dev/null || "$HOME/.local/bin/uipro" init --ai claude --global --force < /dev/null; } ) \
-                && [ -f "$HOME/.claude/skills/ui-ux-pro-max/SKILL.md" ] && rm -rf "$DIR/.claude/skills"; }
-  printf "${INST}Installing the design skill...${N}\n"
-  retry "Installing the design skill" get_skill && ok "Design skill installed" \
-    || note_skip "The design skill did not install. Setup continues without it. Claude Code still works."
-fi
+# ---------- STEP 2: check the laptop ----------
+$script:Step = 'checking your laptop'
+if ($Mode -eq 'install') { STEPH '2 of 9' 'Checking your laptop (about 1 minute)' } else { STEPH 'check' 'Checking your laptop (about 1 minute)' }
+$Problems = @()
 
-# ---------- STEP 8: settings ----------
-STEP="saving your settings"
-step "8 of 9" "Saving your settings (a few seconds)"
-# Sandbox is off on purpose: gh (used to publish) can fail inside the Mac sandbox, and Windows has none.
-# The key, model and safety rules go in Claude Code's USER settings (~/.claude/settings.json),
-# so they work in every folder. Anything the student already had in that file is kept.
-mkdir -p "$HOME/.claude"
-CS="$HOME/.claude/settings.json"; HS="$TOOLS/hackathon-settings.json"
-# When a turn ends on an API error (credit, key limit, auth, server), show a popup telling the student to WhatsApp the admin team
-ALERT="$HOME/.claude/hackathon-api-alert.sh"
-cat > "$ALERT" <<'ALERTEOF'
-#!/bin/bash
-# AI Shift Training - runs when Claude stops on an API error (StopFailure hook)
-WA="__WA__"
-input=$(cat)
-err=$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_ ]*\)".*/\1/p' | head -n1)
-stamp="$HOME/.claude/.api-alert-stamp"; now=$(date +%s); last=$(cat "$stamp" 2>/dev/null || echo 0)
-case "$last" in ''|*[!0-9]*) last=0 ;; esac
-if [ $((now - last)) -ge 120 ]; then
-  echo "$now" > "$stamp"
-  msg="Internal Error 500
+$build = [Environment]::OSVersion.Version.Build
+if ($build -ge $MinBuild) { OK "Windows build $build" }
+else { BAD "Windows is too old (build $build)"; $Problems += ,@('P1', "Run Windows Update (Settings > Windows Update), restart, then run setup again.") }
+if ($Arch -eq 'ARM64') { NOTE "ARM laptop (Snapdragon). Tell the organisers if anything fails." } else { OK "Processor: $Arch" }
 
-Please raise this with the Admin team."
-  nohup osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "AI Shift Studio - contact the admin team" buttons {"OK"} default button 1 with icon caution' -e 'end run' "$msg" >/dev/null 2>&1 &
-fi
-printf '{"terminalSequence":"\\u001b]0;Internal Error 500 - please raise this with the Admin team\\u0007"}\n'
-ALERTEOF
-sed -i '' "s|__WA__|$ADMIN_WHATSAPP|" "$ALERT"
-[ -s "$CS" ] && cp "$CS" "$CS.hackathon-backup" 2>/dev/null
-umask 077
-cat > "$HS" <<JSON
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
-    "ANTHROPIC_AUTH_TOKEN": "$KEY",
-    "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "$MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "$FAST_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "$MODEL",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "$FAST_MODEL",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000",
-    "DISABLE_AUTOUPDATER": "1"
-  },
-  "model": "$MODEL",
-  "hooks": {
-    "StopFailure": [ { "hooks": [ { "type": "command", "command": "/bin/bash", "args": ["$ALERT"], "timeout": 15 } ] } ]
-  },
-  "modelPicker": {
-    "replaceBuiltInOptions": true,
-    "options": [
-      { "model": "$MODEL", "label": "Primary (recommended)", "description": "Use this for everything" },
-      { "model": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra", "description": "Second choice" },
-      { "model": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol", "description": "Second choice. Uses credit fastest" }
-    ]
-  },
-  "permissions": {
-    "defaultMode": "acceptEdits",
-    "disableBypassPermissionsMode": "disable",
-    "deny": [
-      "Bash(sudo:*)", "Bash(rm -rf:*)", "Bash(rm -r:*)", "Bash(rmdir:*)",
-      "Bash(del:*)", "Bash(Remove-Item:*)", "Bash(format:*)", "Bash(shutdown:*)",
-      "Bash(chmod -R:*)", "Bash(chown:*)",
-      "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(gh repo delete:*)",
-      "Read(~/.ssh/**)", "Read(~/.aws/**)", "Edit(~/.bashrc)", "Edit(~/.zshrc)"
-    ]
+$IsElevated = $false
+try { $IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
+if ($IsElevated) {
+  $desktopUser = $null
+  try { $desktopUser = (Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwner).User } catch {}
+  if ($desktopUser -and ($desktopUser -ne $env:USERNAME)) {
+    BAD "PowerShell is running as a different user"
+    $Problems += ,@('W3', "Close this window. Open PowerShell the normal way (do NOT choose 'Run as administrator'). Then run setup again.")
   }
 }
-JSON
-MERGED=0
-if [ -n "$NODE" ] && "$NODE" -e '
-const fs=require("fs"), f=process.argv[1], h=process.argv[2];
-let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
-const n=JSON.parse(fs.readFileSync(h,"utf8"));
-j.env=Object.assign({}, j.env, n.env); delete j.env.ANTHROPIC_MODEL;
-j.hooks=Object.assign({}, j.hooks, {StopFailure: n.hooks.StopFailure});
-const ok=n.modelPicker.options.map(o=>o.model); if (!ok.includes(j.model)) j.model=n.model; j.modelPicker=n.modelPicker; j.permissions=j.permissions||{};
-j.permissions.disableBypassPermissionsMode=n.permissions.disableBypassPermissionsMode;
-j.permissions.defaultMode=n.permissions.defaultMode;
-j.permissions.deny=[...new Set([...(j.permissions.deny||[]), ...n.permissions.deny])];
-fs.writeFileSync(f, JSON.stringify(j,null,2));' "$CS" "$HS"; then MERGED=1
-elif [ -n "$PY" ] && "$PY" - "$CS" "$HS" <<'PYEOF'
-import json, sys
-f, h = sys.argv[1], sys.argv[2]
-try: j = json.load(open(f))
-except Exception: j = {}
-n = json.load(open(h))
-j.setdefault("env", {}).update(n["env"]); j["env"].pop("ANTHROPIC_MODEL", None)
-ok = [o["model"] for o in n["modelPicker"]["options"]]
-if j.get("model") not in ok: j["model"] = n["model"]
-j["modelPicker"] = n["modelPicker"]
-j.setdefault("hooks", {})["StopFailure"] = n["hooks"]["StopFailure"]
-p = j.setdefault("permissions", {})
-p["disableBypassPermissionsMode"] = n["permissions"]["disableBypassPermissionsMode"]
-p["defaultMode"] = n["permissions"]["defaultMode"]
-p["deny"] = list(dict.fromkeys(p.get("deny", []) + n["permissions"]["deny"]))
-json.dump(j, open(f, "w"), indent=2)
-PYEOF
-then MERGED=1; fi
-[ "$MERGED" = 1 ] || cp "$HS" "$CS"
-chmod 600 "$CS"; rm -f "$HS"
-umask 022
-rm -f "$DIR/.claude/settings.local.json" "$DIR/CLAUDE.md"   # old per-folder copies from earlier setups
-# Rules for every folder: ~/.claude/CLAUDE.md (the student's own notes in that file are kept)
-CM="$HOME/.claude/CLAUDE.md"; touch "$CM"
-sed -i '' '/<!-- >>> hackathon rules >>> -->/,/<!-- <<< hackathon rules <<< -->/d' "$CM"
-cat >> "$CM" <<'MD'
+if ($ProfileUnsafe) { NOTE "Your Windows username has special letters or a space, so your work folder is $Dir" }
+
+try { $freeGB = [math]::Floor((Get-PSDrive ($env:SystemDrive.TrimEnd(':'))).Free / 1GB) } catch { $freeGB = 99 }
+if ($freeGB -ge $MinDiskGB) { OK "Free space: $freeGB GB" }
+else { BAD "Free space: only $freeGB GB"; $Problems += ,@('P3', "Your laptop needs 5 GB of free space. Delete big files or empty the Recycle Bin, then run setup again.") }
+
+if (-not (Test-Net)) { if (-not (Wait-Net)) { NetFail } }
+function Test-Site($h) {
+  for ($t = 1; $t -le 2; $t++) {
+    try { Invoke-WebRequest -Uri "https://$h" -Method Head -UseBasicParsing -TimeoutSec 20 | Out-Null; return $true }
+    catch { if ($_.Exception.Response) { return $true } }
+  }
+  return $false
+}
+$blocked = @()
+foreach ($h in 'github.com','api.github.com','raw.githubusercontent.com','objects.githubusercontent.com','claude.ai','openrouter.ai','registry.npmjs.org','nodejs.org') {
+  if (-not (Test-Site $h)) { $blocked += $h }
+}
+if ($blocked.Count -eq 0) { OK "Internet: all download sites work" }
+else { BAD "Internet: these sites are blocked: $($blocked -join ', ')"; $Problems += ,@('P4', "Your internet blocks some download sites. Connect to a different Wi-Fi or your phone's hotspot, then run setup again.") }
+
+try {
+  $r = Invoke-WebRequest -Uri 'https://github.com' -Method Head -UseBasicParsing -TimeoutSec 15
+  $srv = [DateTime]::Parse($r.Headers['Date'], [Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+  if ([math]::Abs(($srv - (Get-Date).ToUniversalTime()).TotalMinutes) -gt 10) {
+    BAD "Clock is wrong"; $Problems += ,@('P5', "Open Settings > Time & language > Date & time. Turn on 'Set time automatically' and click 'Sync now'. Then run setup again.")
+  } else { OK "Clock" }
+} catch {}
+
+if ($Key) {
+  $kr = $null; $sc = 0
+  for ($t = 1; $t -le 3; $t++) {
+    try { $kr = Invoke-RestMethod -Uri 'https://openrouter.ai/api/v1/key' -Headers @{ Authorization = "Bearer $Key" } -TimeoutSec 30; $sc = 200; break }
+    catch { $sc = 0; try { $sc = [int]$_.Exception.Response.StatusCode } catch {}; if ($sc -eq 401 -or $sc -eq 403) { break }; if (-not (Wait-Net)) { break }; Start-Sleep -Seconds 5 }
+  }
+  if ($sc -eq 200) {
+    $rem = $kr.data.limit_remaining
+    if (($rem -ne $null) -and ([double]$rem -le 0)) { BAD "Your key has no credit left"; $Problems += ,@('K3', "Internal Error 500. Please raise this with the Admin team.") }
+    else { OK "Your key works (ends in ...$KeyEnd)" }
+  } elseif ($sc -eq 401 -or $sc -eq 403) { BAD "Your key was not accepted"; $Problems += ,@('K2', "Internal Error 500. Please raise this with the Admin team.") }
+  else { BAD "Could not check your key"; $Problems += ,@('K4', "Setup could not reach the AI service. Connect to a different Wi-Fi or your phone's hotspot, then run setup again.") }
+} else { NOTE "Key not checked (none given)" }
+
+if ($Problems.Count -gt 0) {
+  Write-Host ""; Write-Host "Please fix these, then run setup again:" -ForegroundColor White
+  foreach ($p in $Problems) { TAG "FAIL $($p[0])" 'DarkRed'; Write-Host " "; FIXT $p[1] }
+  if ($Mode -eq 'install') {
+    Show-Cmd $SetupCmd
+    Write-Host "Stuck? Paste a screenshot into the Setup Helper chat: $HelpChat"
+    throw "HACKATHON_FAIL"
+  }
+}
+
+# ===================================================================================
+if ($Mode -eq 'install') {
+$gitArch = if ($Arch -eq 'ARM64') { 'arm64' } else { '64-bit' }
+$ghArch  = if ($Arch -eq 'ARM64') { 'arm64' } else { 'amd64' }
+$nodeArch = if ($Arch -eq 'ARM64') { 'arm64' } else { 'x64' }
+$uvArch  = if ($Arch -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+
+# ---------- STEP 3: Git (needed) ----------
+$script:Step = 'installing Git'
+STEPH '3 of 9' 'Git (about 2-3 minutes)'
+if ((Test-Tools).git) { OK "Git is already installed. Skipping this step." }
+else {
+  INST "Downloading Git (about 60 MB)..."
+  $ok = Invoke-Retry 'Downloading Git' {
+    $exe = "$Tools\PortableGit.exe"
+    if (-not (Get-File "https://github.com/git-for-windows/git/releases/download/$GitTag/PortableGit-$GitVer-$gitArch.7z.exe" $exe)) { return $false }
+    INST "Unpacking Git (about 1 minute)..."
+    Start-Process -FilePath $exe -ArgumentList "-o`"$Tools\git`"", '-y' -Wait -WindowStyle Hidden
+    Remove-Item $exe -Force -ErrorAction SilentlyContinue
+    return (Test-Path "$Tools\git\bin\bash.exe")
+  }
+  if (-not (Test-Tools).git) {
+    if (Winget-Install 'Git.Git' 'Git' @()) { Start-Sleep -Seconds 2 }
+    if (-not (Test-Tools).git -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+      FIXT "Git did not install. This usually means the popup was closed or No was clicked. Trying once more."
+      Winget-Install 'Git.Git' 'Git' @() | Out-Null
+    }
+  }
+  if (-not (Test-Tools).git) {
+    if (-not (Test-Net)) { NetFail }
+    Fail T1 "Git could not be installed. Run setup again. If Windows Security showed a warning, allow the file, then run setup again." $SetupCmd
+  }
+  OK "Git installed"
+}
+
+# ---------- STEP 4: GitHub CLI (needed to publish your website) ----------
+$script:Step = 'installing the GitHub tool'
+STEPH '4 of 9' 'GitHub tool (about 1 minute)'
+if ((Test-Tools).gh) { OK "GitHub tool is already installed. Skipping this step." }
+else {
+  INST "Downloading the GitHub tool..."
+  Invoke-Retry 'Downloading the GitHub tool' {
+    $z = "$Tools\gh.zip"
+    if (-not (Get-File "https://github.com/cli/cli/releases/download/v$GhVersion/gh_${GhVersion}_windows_$ghArch.zip" $z)) { return $false }
+    Remove-Item "$Tools\gh" -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -Path $z -DestinationPath "$Tools\gh" -Force
+    Remove-Item $z -Force -ErrorAction SilentlyContinue
+    return (Test-Path "$Tools\gh\bin\gh.exe")
+  } | Out-Null
+  if (-not (Test-Tools).gh) { Winget-Install 'GitHub.cli' 'the GitHub tool' @() | Out-Null }
+  if (-not (Test-Tools).gh) {
+    if (-not (Test-Net)) { NetFail }
+    Fail T2 "The GitHub tool could not be installed. Run setup again. If it fails again, paste a screenshot into the Setup Helper chat." $SetupCmd
+  }
+  OK "GitHub tool installed"
+}
+# Make git and gh work in every new PowerShell window too
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+foreach ($p in @("$Tools\gh\bin", "$Tools\git\cmd")) {
+  if ((Test-Path $p) -and ($userPath -notlike "*$p*")) { $userPath = "$p;$userPath" }
+}
+[Environment]::SetEnvironmentVariable('Path', $userPath, 'User')
+
+# ---------- STEP 5: Node.js and Python (nice to have, used by the design skill) ----------
+$script:Step = 'installing Node.js and Python'
+STEPH '5 of 9' 'Node.js and Python (about 2-4 minutes)'
+if ((Test-Tools).node) { OK "Node.js is already installed. Skipping it." }
+else {
+  INST "Downloading Node.js..."
+  Invoke-Retry 'Downloading Node.js' {
+    $sums = (Invoke-WebRequest -Uri "https://nodejs.org/dist/$NodeLine/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 60).Content
+    $name = ($sums -split "`n" | Where-Object { $_ -match "win-$nodeArch\.zip\s*$" } | Select-Object -First 1) -replace '^\S+\s+', ''
+    if (-not $name) { return $false }
+    $z = "$Tools\node.zip"
+    if (-not (Get-File "https://nodejs.org/dist/$NodeLine/$($name.Trim())" $z)) { return $false }
+    Remove-Item "$Tools\node", "$Tools\node-tmp" -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -Path $z -DestinationPath "$Tools\node-tmp" -Force
+    $inner = Get-ChildItem "$Tools\node-tmp" -Directory | Select-Object -First 1
+    Move-Item $inner.FullName "$Tools\node"
+    Remove-Item $z, "$Tools\node-tmp" -Recurse -Force -ErrorAction SilentlyContinue
+    return (Test-Path "$Tools\node\node.exe")
+  } | Out-Null
+  if (-not (Test-Tools).node) { Winget-Install 'OpenJS.NodeJS.LTS' 'Node.js' @() | Out-Null }
+  if ((Test-Tools).node) { OK "Node.js installed" } else { SKIP "Node.js did not install. Setup continues without it (the design skill will be skipped)." }
+}
+if ((Test-Tools).python) { OK "Python is already installed. Skipping it." }
+else {
+  INST "Downloading Python..."
+  Invoke-Retry 'Downloading Python' {
+    $z = "$Tools\uv.zip"
+    if (-not (Get-File "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-$uvArch-pc-windows-msvc.zip" $z)) { return $false }
+    Expand-Archive -Path $z -DestinationPath "$Tools\uv" -Force
+    Remove-Item $z -Force -ErrorAction SilentlyContinue
+    & "$Tools\uv\uv.exe" python install 3.12 --no-bin | Out-Host
+    $ErrorActionPreference = 'Continue'
+    $p = (& "$Tools\uv\uv.exe" python find 3.12 | Out-String).Trim()
+    if (Test-PyExe $p) { [IO.File]::WriteAllText("$Tools\python-path.txt", $p); return $true }
+    return $false
+  } | Out-Null
+  if (-not (Test-Tools).python) { Winget-Install 'Python.Python.3.12' 'Python' @('--override','/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1') | Out-Null }
+  $pd = Find-PythonDir
+  if ($pd -and -not (Test-Path "$pd\python3.exe")) { Copy-Item "$pd\python.exe" "$pd\python3.exe" -ErrorAction SilentlyContinue }
+  if ((Test-Tools).python) { OK "Python installed" } else { SKIP "Python did not install. Setup continues without it." }
+}
+
+# ---------- STEP 6: Claude Code (needed) ----------
+$script:Step = 'installing Claude Code'
+STEPH '6 of 9' 'Claude Code (about 1-2 minutes)'
+$haveCc = ''
+if (Test-Path $ClaudeExe) { try { $haveCc = ((& $ClaudeExe --version) -split ' ')[0] } catch {} }
+if ($haveCc -and (([version]$haveCc) -ge ([version]$CcVersion))) { OK "Claude Code $haveCc is already installed. Skipping this step." }
+else {
+  INST "Downloading Claude Code..."
+  Invoke-Retry 'Installing Claude Code' {
+    try { & ([scriptblock]::Create((Invoke-RestMethod https://claude.ai/install.ps1 -TimeoutSec 120))) $CcVersion } catch {}
+    $ErrorActionPreference = 'Continue'
+    return (Test-Path $ClaudeExe)
+  } | Out-Null
+  if (-not (Test-Path $ClaudeExe)) {
+    if (-not (Test-Net)) { NetFail }
+    Fail C1 "Claude Code could not be installed. If Windows Security showed a warning: open Windows Security > Virus & threat protection > Protection history, allow claude.exe. Then run setup again." $SetupCmd
+  }
+  $ccv = ''; try { $ccv = (& $ClaudeExe --version | Out-String).Trim() } catch {}
+  if (-not $ccv) { Fail C2 "Claude Code is installed but won't start. Antivirus may be blocking it: open Windows Security > Virus & threat protection > Protection history, allow claude.exe. Then run setup again." $SetupCmd }
+  OK "Claude Code installed"
+}
+$ErrorActionPreference = 'Continue'
+
+# ---------- STEP 7: design skill (nice to have) ----------
+$script:Step = 'installing the design skill'
+STEPH '7 of 9' 'Design skill (about 1 minute)'
+$HasSkill = { Test-Path "$env:USERPROFILE\.claude\skills\ui-ux-pro-max\SKILL.md" }
+if (Test-Path "$env:USERPROFILE\.claude\skills\design-system\SKILL.md") { OK "Design skill is already installed. Skipping this step." }
+elseif (-not (Test-Tools).node) { SKIP "Design skill skipped (it needs Node.js). Claude Code still works." }
+else {
+  INST "Installing the design skill..."
+  $okSkill = Invoke-Retry 'Installing the design skill' {
+    $npm = Join-Path (Split-Path (Get-Command node).Source) 'npm.cmd'
+    # Older setups installed the retired "uipro-cli" package, which owns the same "uipro" command.
+    # Remove it first, otherwise npm stops with "EEXIST: file already exists".
+    cmd /c "`"$npm`" uninstall -g --prefix `"$Tools\npm`" uipro-cli --no-fund --no-audit >nul 2>&1" | Out-Null
+    if (-not (Test-Path "$Tools\npm\node_modules\ui-ux-pro-max-cli\package.json")) { Remove-Item "$Tools\npm\uipro", "$Tools\npm\uipro.cmd", "$Tools\npm\uipro.ps1" -Force -ErrorAction SilentlyContinue }
+    $o = cmd /c "`"$npm`" install -g --prefix `"$Tools\npm`" ui-ux-pro-max-cli@$UiproVersion --no-fund --no-audit 2>&1"
+    $uipro = "$Tools\npm\uipro.cmd"
+    if (-not (Test-Path $uipro)) { return $false }
+    Push-Location $Dir
+    & $uipro init --ai claude --global --force --offline | Out-Host
+    $ErrorActionPreference = 'Continue'
+    if (-not (& $HasSkill)) { & $uipro init --ai claude --global --force | Out-Host; $ErrorActionPreference = 'Continue' }
+    Pop-Location
+    if (& $HasSkill) { Remove-Item "$Dir\.claude\skills" -Recurse -Force -ErrorAction SilentlyContinue }   # old per-folder copy
+    return (& $HasSkill)
+  }
+  if ($okSkill) { OK "Design skill installed" } else { SKIP "The design skill did not install. Setup continues without it. Claude Code still works." }
+}
+
+# ---------- STEP 8: settings ----------
+$script:Step = 'saving your settings'
+STEPH '8 of 9' 'Saving your settings (a few seconds)'
+$GitBash = Find-GitBash
+$envBlock = [ordered]@{
+  ANTHROPIC_BASE_URL = 'https://openrouter.ai/api'
+  ANTHROPIC_AUTH_TOKEN = $Key
+  ANTHROPIC_API_KEY = ''
+  ANTHROPIC_DEFAULT_SONNET_MODEL = $Model
+  ANTHROPIC_DEFAULT_HAIKU_MODEL = $FastModel
+  ANTHROPIC_DEFAULT_OPUS_MODEL = $Model
+  CLAUDE_CODE_SUBAGENT_MODEL = $FastModel
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS = '200000'
+  ENABLE_TOOL_SEARCH = 'false'
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS = '32000'
+  DISABLE_AUTOUPDATER = '1'
+}
+if ($GitBash) { $envBlock.CLAUDE_CODE_GIT_BASH_PATH = $GitBash }
+$picker = [ordered]@{
+  replaceBuiltInOptions = $true
+  options = @(
+    [ordered]@{ model = $Model; label = 'Primary (recommended)'; description = 'Use this for everything' },
+    [ordered]@{ model = 'openai/gpt-5.6-terra'; label = 'GPT-5.6 Terra'; description = 'Second choice' },
+    [ordered]@{ model = 'openai/gpt-5.6-sol'; label = 'GPT-5.6 Sol'; description = 'Second choice. Uses credit fastest' }
+  )
+}
+# When a turn ends on an API error (credit, key limit, auth, server), show a popup telling the student to WhatsApp the admin team
+$AlertPs1 = "$env:USERPROFILE\.claude\hackathon-api-alert.ps1"
+$hooksBlock = [ordered]@{ StopFailure = @( [ordered]@{ hooks = @( [ordered]@{ type = 'command'; command = 'powershell.exe'; args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $AlertPs1); timeout = 15 } ) } ) }
+$settings = [ordered]@{
+  env = $envBlock
+  model = $Model
+  modelPicker = $picker
+  hooks = $hooksBlock
+  permissions = [ordered]@{
+    defaultMode = 'acceptEdits'
+    disableBypassPermissionsMode = 'disable'
+    deny = @(
+      'Bash(sudo:*)','Bash(rm -rf:*)','Bash(rm -r:*)','Bash(rmdir:*)',
+      'Bash(del:*)','Bash(Remove-Item:*)','Bash(format:*)','Bash(shutdown:*)',
+      'Bash(chmod -R:*)','Bash(chown:*)',
+      'Bash(git push --force:*)','Bash(git push -f:*)','Bash(gh repo delete:*)',
+      'Read(~/.ssh/**)','Read(~/.aws/**)','Edit(~/.bashrc)','Edit(~/.zshrc)'
+    )
+  }
+}
+$Utf8 = New-Object System.Text.UTF8Encoding($false)
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
+$alertCode = @'
+# AI Shift Training - runs when Claude stops on an API error (StopFailure hook)
+param([switch]$Show, [string]$Err = '')
+$msg = "Internal Error 500`n`nPlease raise this with the Admin team."
+if ($Show) { (New-Object -ComObject WScript.Shell).Popup($msg, 0, 'AI Shift Studio - contact the admin team', 48 + 4096) | Out-Null; exit 0 }
+try {
+  $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  foreach ($n in 'error', 'error_type', 'reason') { $v = $j.$n; if ($v -is [string] -and $v) { $Err = $v; break } elseif ($v -and $v.type) { $Err = [string]$v.type; break } }
+} catch {}
+$Err = $Err -replace '[^A-Za-z0-9_ ]', ''
+$stamp = "$env:USERPROFILE\.claude\.api-alert-stamp"
+$recent = (Test-Path $stamp) -and (((Get-Date) - (Get-Item $stamp).LastWriteTime).TotalSeconds -lt 120)
+if (-not $recent) {
+  Set-Content $stamp '' -ErrorAction SilentlyContinue
+  try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Show -Err `"$Err`"" -ErrorAction Stop } catch {}
+}
+$e = [char]27; $b = [char]7
+@{ terminalSequence = "$e]0;Internal Error 500 - please raise this with the Admin team$b$e]9;Internal Error 500 - please raise this with the Admin team$b" } | ConvertTo-Json -Compress
+'@
+[IO.File]::WriteAllText($AlertPs1, $alertCode, $Utf8)
+$cur = $null
+if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw).Trim().Length -gt 2)) {
+  Copy-Item $SettingsFile "$SettingsFile.hackathon-backup" -Force -ErrorAction SilentlyContinue
+  try { $cur = Get-Content $SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $cur = $null }
+}
+if ($cur) {   # keep everything the student already had; add or replace only the hackathon parts
+  if (-not $cur.env) { $cur | Add-Member -NotePropertyName env -NotePropertyValue (New-Object PSObject) -Force }
+  foreach ($k in $envBlock.Keys) { $cur.env | Add-Member -NotePropertyName $k -NotePropertyValue $envBlock[$k] -Force }
+  $cur.env.PSObject.Properties.Remove('ANTHROPIC_MODEL')                       # old setting that blocked /model choices
+  $okModels = @($picker.options | ForEach-Object { $_.model })
+  if ($okModels -notcontains $cur.model) { $cur | Add-Member -NotePropertyName model -NotePropertyValue $Model -Force }   # keep the student's choice only if it's still in the menu
+  $cur | Add-Member -NotePropertyName modelPicker -NotePropertyValue $picker -Force
+  if (-not $cur.permissions) { $cur | Add-Member -NotePropertyName permissions -NotePropertyValue (New-Object PSObject) -Force }
+  $cur.permissions | Add-Member -NotePropertyName disableBypassPermissionsMode -NotePropertyValue 'disable' -Force
+  $cur.permissions | Add-Member -NotePropertyName defaultMode -NotePropertyValue 'acceptEdits' -Force   # edit files without asking; commands still ask
+  $deny = @(@($cur.permissions.deny) + $settings.permissions.deny | Where-Object { $_ } | Select-Object -Unique)
+  $cur.permissions | Add-Member -NotePropertyName deny -NotePropertyValue $deny -Force
+  if (-not $cur.hooks) { $cur | Add-Member -NotePropertyName hooks -NotePropertyValue (New-Object PSObject) -Force }
+  $cur.hooks | Add-Member -NotePropertyName StopFailure -NotePropertyValue $hooksBlock.StopFailure -Force   # keep the student's other hooks
+  [IO.File]::WriteAllText($SettingsFile, ($cur | ConvertTo-Json -Depth 20), $Utf8)
+} else {
+  [IO.File]::WriteAllText($SettingsFile, ($settings | ConvertTo-Json -Depth 10), $Utf8)
+}
+Remove-Item $OldSettings, "$Dir\CLAUDE.md" -Force -ErrorAction SilentlyContinue   # old per-folder copies
+$md = @'
 <!-- >>> hackathon rules >>> -->
 # Hackathon rules for the assistant
 - Work in the folder Claude was started in. Create and edit files only inside it. Never change or delete files outside it.
@@ -508,146 +552,190 @@ cat >> "$CM" <<'MD'
 - When the user starts a new, unrelated task, remind them to type /clear first.
 - Never ask for or store passwords, API keys, or personal data in code.
 <!-- <<< hackathon rules <<< -->
-MD
-printf '.claude/\nsetup-log.txt\n' > "$DIR/.gitignore"
-# Skip Claude's first-run screens (login + "do you trust this folder?")
-[ -f "$HOME/.claude.json" ] && cp "$HOME/.claude.json" "$HOME/.claude.json.hackathon-backup" 2>/dev/null
-if [ -n "$NODE" ]; then
-  "$NODE" -e '
-const fs=require("fs"), f=process.argv[1], d=process.argv[2];
-let j={}; try { j=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) {}
-j.hasCompletedOnboarding=true; j.projects=j.projects||{};
-j.projects[d]=Object.assign({}, j.projects[d], {hasTrustDialogAccepted:true});
-fs.writeFileSync(f, JSON.stringify(j,null,2));' "$HOME/.claude.json" "$DIR" || true
-elif [ ! -s "$HOME/.claude.json" ]; then
-  printf '{"hasCompletedOnboarding": true, "projects": {"%s": {"hasTrustDialogAccepted": true}}}\n' "$DIR" > "$HOME/.claude.json"
-fi
-# Typing "claude" anywhere opens the hackathon folder, with the hackathon tools on PATH
-BREWBIN=""; [ -n "$BREW" ] && BREWBIN="$("$BREW" --prefix)/bin:"
-for RC in "$HOME/.zshrc" "$HOME/.bash_profile"; do
-  touch "$RC"
-  sed -i '' '/# >>> hackathon claude >>>/,/# <<< hackathon claude <<</d' "$RC"
-  cat >> "$RC" <<RCEOF
-# >>> hackathon claude >>>
-export PATH="\$HOME/.local/bin:\$PATH"
-claude() { ( [ "\$PWD" = "\$HOME" ] && cd "\$HOME/claude-hackathon"; printf '\\033[1;30;106m Claude is working in: %s  (to use a photo or PDF from another folder, drag it into this window) \\033[0m\\n' "\$PWD"; PATH="\$HOME/.local/hackathon-tools/bin:\$HOME/.local/bin:$BREWBIN\$PATH" command claude "\$@" ); }
-# <<< hackathon claude <<<
-RCEOF
-done
-[ -n "$GROUP" ] && { mkdir -p "$HOME/.claude"; printf '%s\n' "$GROUP" > "$GROUP_FILE"; }
-ok "Settings saved${GROUP:+ (group: $GROUP)}"
+'@
+$CM = "$env:USERPROFILE\.claude\CLAUDE.md"
+$oldCm = ''; if (Test-Path $CM) { $oldCm = [string](Get-Content $CM -Raw -Encoding UTF8) }
+$oldCm = [regex]::Replace($oldCm, '(?s)\r?\n?<!-- >>> hackathon rules >>> -->.*?<!-- <<< hackathon rules <<< -->\r?\n?', '')
+[IO.File]::WriteAllText($CM, ($(if ($oldCm.Trim()) { $oldCm.TrimEnd() + "`n`n" } else { '' }) + $md), $Utf8)
+[IO.File]::WriteAllText("$Dir\.gitignore", ".claude/`nsetup-log.txt`n.tmp/`n", $Utf8)
 
-fi  # end of install-only steps
+# Skip Claude's first-run screens (login + "do you trust this folder?")
+$F = "$env:USERPROFILE\.claude.json"
+try {
+  $j = $null
+  if ((Test-Path $F) -and ((Get-Content $F -Raw).Trim().Length -gt 2)) {
+    Copy-Item $F "$F.hackathon-backup" -Force -ErrorAction SilentlyContinue
+    $j = Get-Content $F -Raw -Encoding UTF8 | ConvertFrom-Json
+  }
+  if (-not $j) { $j = New-Object PSObject }
+  $j | Add-Member -NotePropertyName hasCompletedOnboarding -NotePropertyValue $true -Force
+  if (-not $j.projects) { $j | Add-Member -NotePropertyName projects -NotePropertyValue (New-Object PSObject) -Force }
+  foreach ($k in @($Dir, ($Dir -replace '\\','/'))) {
+    $j.projects | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ hasTrustDialogAccepted = $true }) -Force
+  }
+  [IO.File]::WriteAllText($F, ($j | ConvertTo-Json -Depth 100), $Utf8)
+} catch { NOTE "If Claude asks 'Do you trust the files in this folder?', press Enter." }
+
+# Typing "claude" works in the current folder (a plain new PowerShell window starts in the hackathon folder).
+# The .cmd file must only contain plain letters, so the user's folders are written as %VARIABLES%.
+function To-Cmd($p) { if (-not $p) { return '' }; return (($p -replace [regex]::Escape($env:LOCALAPPDATA), '%LOCALAPPDATA%') -replace [regex]::Escape($env:USERPROFILE), '%USERPROFILE%') }
+$pyDir = Find-PythonDir
+$shimPath = @("$Tools\git\cmd", "$Tools\gh\bin", "$Tools\node", "$Tools\npm") + $(if ($pyDir) { @($pyDir, "$pyDir\Scripts") } else { @() }) | ForEach-Object { To-Cmd $_ }
+$shimLines = @('@echo off', "set `"PATH=$($shimPath -join ';');%PATH%`"")
+if ($GitBash) { $shimLines += "set `"CLAUDE_CODE_GIT_BASH_PATH=$(To-Cmd $GitBash)`"" }
+if ($ProfileUnsafe) { $shimLines += "set `"TEMP=$Dir\.tmp`"", "set `"TMP=$Dir\.tmp`"" }
+$shimLines += "if /i `"%CD%`"==`"%USERPROFILE%`" cd /d `"$(To-Cmd $Dir)`"", "if /i `"%CD%`"==`"%SystemRoot%\system32`" cd /d `"$(To-Cmd $Dir)`"", 'echo Claude is working in: %CD%', 'echo To use a photo or PDF from another folder, drag it into this window.', '"%USERPROFILE%\.local\bin\claude.exe" %*'
+New-Item -ItemType Directory -Force -Path $Shim | Out-Null
+[IO.File]::WriteAllText("$Shim\claude.cmd", (($shimLines -join "`r`n") + "`r`n"), (New-Object System.Text.ASCIIEncoding))
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if ($userPath -notlike "*$Shim*") { [Environment]::SetEnvironmentVariable('Path', "$Shim;$userPath", 'User') }
+try {
+  $pol = Get-ExecutionPolicy -Scope CurrentUser
+  if ($pol -eq 'Undefined' -or $pol -eq 'Restricted') { Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force -ErrorAction Stop }
+  $prof = $PROFILE.CurrentUserAllHosts
+  New-Item -ItemType Directory -Force -Path (Split-Path $prof) -ErrorAction SilentlyContinue | Out-Null
+  $old = ''; if (Test-Path $prof) { $old = [string](Get-Content $prof -Raw -ErrorAction SilentlyContinue) }
+  $block = "# >>> hackathon claude >>>`r`nfunction claude { & `"`$HOME\.claude-hackathon-bin\claude.cmd`" @args }`r`n# <<< hackathon claude <<<"
+  if ($old -notlike "*$block*") {
+    $old = [regex]::Replace($old, '(?s)\r?\n?# >>> hackathon claude >>>.*?# <<< hackathon claude <<<', '')
+    Set-Content -Path $prof -Value ($old.TrimEnd() + "`r`n`r`n" + $block + "`r`n") -Encoding UTF8 -NoNewline -ErrorAction Stop
+  }
+} catch { NOTE "Typing claude still works through the shortcut file." }
+if ($Group) { New-Item -ItemType Directory -Force -Path (Split-Path $GroupFile) | Out-Null; [IO.File]::WriteAllText($GroupFile, $Group) }
+OK "Settings saved$(if ($Group) { " (group: $Group)" })"
+
+}  # end of install-only steps
 
 # ===================================================================================
 # ---------- STEP 9: test the AI, then connect GitHub ----------
-STEP="testing the AI"
-[ "$MODE" = "install" ] && step "9 of 9" "Testing the AI and connecting GitHub (about 2-3 minutes)"
-find_brew; check_tools
-CLAUDE="$HOME/.local/bin/claude"
-CL_OK=0; CL_CODE=""; CL_MSG=""
-if "$CLAUDE" --version >/dev/null 2>&1; then
-  printf "${INST}Asking the AI a test question...${N}\n"
-  for attempt in 1 2 3; do
-    T="$(mktemp)"
-    ( cd "$DIR" && PATH="$TBIN:$HOME/.local/bin:$PATH" "$CLAUDE" -p "Reply with exactly: SETUP OK" ) > "$T" 2>&1 < /dev/null &
-    P=$!; i=0
-    while kill -0 $P 2>/dev/null && [ $i -lt 180 ]; do sleep 1; i=$((i+1)); done
-    TIMED=0; kill -0 $P 2>/dev/null && { kill $P 2>/dev/null; TIMED=1; }
-    wait $P 2>/dev/null
-    OUT="$(grep -v 'unrecognized_model' "$T")"; rm -f "$T"
-    if printf '%s' "$OUT" | grep -q "SETUP OK"; then CL_OK=1; break; fi
-    if printf '%s' "$OUT" | grep -Eqi '401|unauthori|invalid.*key|user not found|no auth|402|credit|insufficient'; then break; fi
-    if [ $attempt -lt 3 ]; then
-      printf "${FIX}The AI did not answer (try %s of 3). Checking internet and trying again...${N}\n" "$attempt"
-      wait_net || break; sleep 20
-    fi
-  done
-  if [ "$CL_OK" = 1 ]; then ok "The AI answered (key ends in ...${KEY: -4})"
-  else
-    if   printf '%s' "$OUT" | grep -Eqi '401|unauthori|invalid.*key|user not found|no auth'; then CL_CODE=C4; CL_MSG="Internal Error 500. Please raise this with the Admin team."
-    elif printf '%s' "$OUT" | grep -Eqi '402|credit|insufficient|payment'; then CL_CODE=C5; CL_MSG="Internal Error 500. Please raise this with the Admin team."
-    elif printf '%s' "$OUT" | grep -Eqi '429|rate.?limit|too many|overloaded'; then CL_CODE=C6; CL_MSG="Internal Error 500. Please raise this with the Admin team."
-    elif [ "$TIMED" = 1 ] || printf '%s' "$OUT" | grep -Eqi 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|certificate|network|fetch failed'; then CL_CODE=N1; CL_MSG="Your internet stopped working during the AI test. Connect to a different Wi-Fi or your phone's hotspot, then run setup again."
-    else CL_CODE=C3; CL_MSG="Internal Error 500. Please raise this with the Admin team."; fi
-    bad "The AI did not answer ($CL_CODE)"
-  fi
-fi
-
-STEP="connecting GitHub"
-GH_USER=""
-if [ -n "$GH" ]; then
-  if ! "$GH" auth status >/dev/null 2>&1 && [ "$MODE" = "install" ]; then
-    for t in 1 2 3; do
-      printf "\n${INST}Connect your GitHub account (about 2 minutes)${N}\n"
-      act "1. Press Return. GitHub should open in your browser by itself."
-      echo "   If the browser does NOT open, open this link yourself:  https://github.com/login/device"
-      act "2. Make sure you are logged in to GitHub in the browser."
-      act "3. Click the green 'Continue' button."
-      act "4. Type the 8-character code shown below in this window (it looks like ABCD-1234)."
-      act "5. Click the green 'Authorize github' button. Then come back to this window."
-      echo "   If it asks 'Authenticate Git with your GitHub credentials?', press Return (Yes)."
-      echo ""
-      "$GH" auth login -h github.com -p https -w < /dev/tty || true
-      "$GH" auth status >/dev/null 2>&1 && break
-      if [ $t -lt 3 ]; then
-        fixmsg "GitHub is not connected yet (try $t of 3)."
-        act "Press Return to try the GitHub step again."
-        IFS= read -r _ < /dev/tty
-      fi
-    done
-  fi
-  if "$GH" auth status >/dev/null 2>&1; then
-    "$GH" auth setup-git >/dev/null 2>&1 || true
-    GH_USER="$("$GH" api user -q .login 2>/dev/null)"
-    if [ -n "$GH_USER" ] && [ "$MODE" = "install" ] && [ -z "$(git config --global user.name 2>/dev/null)" ]; then
-      git config --global user.name "$GH_USER"
-      git config --global user.email "$("$GH" api user -q .id)+$GH_USER@users.noreply.github.com"
-    fi
-  fi
-fi
-
-# ---------- Result ----------
-printf "\n${STEPC} RESULT ${N}\n"
-ALL=1
-[ -n "$GIT" ] && ok "Git" || { bad "Git (T1)"; ALL=0; }
-[ -n "$GH" ] && ok "GitHub tool" || { bad "GitHub tool (T2)"; ALL=0; }
-"$CLAUDE" --version >/dev/null 2>&1 && ok "Claude Code $("$CLAUDE" --version | awk '{print $1}')" || { bad "Claude Code (C1)"; ALL=0; }
-grep -q '"ANTHROPIC_AUTH_TOKEN": *"sk-or-' "$HOME/.claude/settings.json" 2>/dev/null && ok "Your settings (work in every folder)" || { bad "Your settings (run setup)"; ALL=0; }
-[ "$CL_OK" = 1 ] && ok "The AI works" || { bad "The AI (${CL_CODE:-not tested})"; ALL=0; }
-[ -n "$GH_USER" ] && ok "GitHub account: ${B}$GH_USER${N}  (not you? run  gh auth logout  then run setup again)" || { bad "GitHub not connected (G1)"; ALL=0; }
-[ -n "$NODE" ] && ok "Node.js" || warn "Node.js not installed (optional)"
-[ -n "$PY" ] && ok "Python" || warn "Python not installed (optional)"
-[ -f "$HOME/.claude/skills/ui-ux-pro-max/SKILL.md" ] && ok "Design skills (UI/UX Pro Max)" || warn "Design skill not installed (optional)"
-
-echo ""
-if [ "$ALL" = 1 ]; then
-  printf "${DONE}                                  ${N}\n"
-  printf "${DONE}     Your Setup Is Complete       ${N}\n"
-  printf "${DONE}                                  ${N}\n\n"
-  printf "${G}${B}PASS${N}\n"
-  act "Take a screenshot of this window and submit it in the form from your email."
-  if [ "$MODE" = "install" ]; then
-    echo ""
-    echo "To start Claude Code:"
-    echo "  1. Quit Terminal (press Cmd + Q)."
-    echo "  2. Open Terminal again."
-    echo "  3. Type  claude  and press Return."
-    echo ""
-    echo "Your key works in every folder. In a new Terminal, claude starts in ~/claude-hackathon."
-    echo "To work somewhere else, go to that folder first (e.g.  cd Desktop/my-site ), then type  claude"
-    echo "If Claude asks 'Do you trust the files in this folder?', press Enter."
-  fi
-  FAILED=1; sleep 1; exit 0
-fi
-if [ "$MODE" = "check" ]; then
-  printf "${TAG_WARN} CHECK DONE ${N} ${FIX}Anything marked FAIL above is not ready. Run setup to fix it.${N}\n"
-  show_cmd "$SETUP_CMD"; FAILED=1; sleep 1; exit 0
-fi
-[ -n "$CL_CODE" ] && { [ "$CL_CODE" = N1 ] && net_fail; fail "$CL_CODE" "$CL_MSG" "$SETUP_CMD"; }
-[ -z "$GH_USER" ] && fail G1 "GitHub is not connected yet. Run setup again and do the GitHub steps (press Return, click the green buttons, type the code).
-No GitHub account? Make one at github.com, confirm your email, then run setup again." "$SETUP_CMD"
-fail X2 "Something above is marked FAIL. Run setup again." "$SETUP_CMD"
+$script:Step = 'testing the AI'
+if ($Mode -eq 'install') { STEPH '9 of 9' 'Testing the AI and connecting GitHub (about 2-3 minutes)' }
+$tools = Test-Tools
+$gb = Find-GitBash; if ($gb) { $env:CLAUDE_CODE_GIT_BASH_PATH = $gb }
+$ClOK = $false; $ClCode = ''; $ClMsg = ''; $out = ''; $timed = $false
+$ccv = ''; if (Test-Path $ClaudeExe) { try { $ccv = ((& $ClaudeExe --version) -split ' ')[0] } catch {} }
+if ($ccv) {
+  INST "Asking the AI a test question..."
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $tOut = Join-Path $Dir '.tmp\claude-test.out'; $tErr = Join-Path $Dir '.tmp\claude-test.err'
+    Remove-Item $tOut, $tErr -ErrorAction SilentlyContinue
+    $timed = $false; $out = ''
+    try {
+      $p = Start-Process -FilePath $ClaudeExe -ArgumentList '-p', '"Reply with exactly: SETUP OK"' -WorkingDirectory $Dir `
+            -NoNewWindow -PassThru -RedirectStandardOutput $tOut -RedirectStandardError $tErr
+      if (-not $p.WaitForExit(180000)) { try { $p.Kill() } catch {}; $timed = $true }
+      $out = (@(Get-Content $tOut -ErrorAction SilentlyContinue) + @(Get-Content $tErr -ErrorAction SilentlyContinue) |
+              Where-Object { $_ -and ($_ -notmatch 'unrecognized_model') }) -join "`n"
+    } catch { $out = "$_" }
+    if ($out -match 'SETUP OK') { $ClOK = $true; break }
+    if ($out -match '401|unauthori|invalid.*key|user not found|no auth|402|credit|insufficient') { break }
+    if ($attempt -lt 3) {
+      FIXT "The AI did not answer (try $attempt of 3). Checking internet and trying again..."
+      if (-not (Wait-Net)) { break }; Start-Sleep -Seconds 20
+    }
+  }
+  if ($ClOK) { OK "The AI answered (key ends in ...$KeyEnd)" }
+  else {
+    if     ($out -match '401|unauthori|invalid.*key|user not found|no auth') { $ClCode = 'C4'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    elseif ($out -match '402|credit|insufficient|payment') { $ClCode = 'C5'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    elseif ($out -match '429|rate.?limit|too many|overloaded') { $ClCode = 'C6'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    elseif ($timed -or $out -match 'ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|certificate|network|fetch failed') { $ClCode = 'N1' }
+    elseif ($out -match 'bash|git-bash|Git Bash') { $ClCode = 'W4'; $ClMsg = 'Claude Code cannot find Git Bash. Run setup again.' }
+    else { $ClCode = 'C3'; $ClMsg = 'Internal Error 500. Please raise this with the Admin team.' }
+    BAD "The AI did not answer ($ClCode)"
+  }
 }
 
-main "$@"
+$script:Step = 'connecting GitHub'
+$GhUser = ''
+function Gh-Ok { cmd /c "gh auth status >nul 2>&1"; return ($LASTEXITCODE -eq 0) }
+if ($tools.gh) {
+  if (-not (Gh-Ok) -and $Mode -eq 'install') {
+    for ($t = 1; $t -le 3; $t++) {
+      Write-Host ""; INST "Connect your GitHub account (about 2 minutes)"
+      ACT "1. Press Enter. GitHub should open in your browser by itself."
+      Write-Host "   If the browser does NOT open, open this link yourself:  https://github.com/login/device"
+      ACT "2. Make sure you are logged in to GitHub in the browser."
+      ACT "3. Click the green 'Continue' button."
+      ACT "4. Type the 8-character code shown below in this window (it looks like ABCD-1234)."
+      ACT "5. Click the green 'Authorize github' button. Then come back to this window."
+      Write-Host "   If it asks 'Authenticate Git with your GitHub credentials?', press Enter (Yes)."
+      Write-Host ""
+      & gh auth login -h github.com -p https -w
+      $ErrorActionPreference = 'Continue'
+      if (Gh-Ok) { break }
+      if ($t -lt 3) { FIXT "GitHub is not connected yet (try $t of 3)."; Read-Host "Press Enter to try the GitHub step again" | Out-Null }
+    }
+  }
+  if (Gh-Ok) {
+    cmd /c "gh auth setup-git >nul 2>&1"
+    $GhUser = (& gh api user -q .login | Out-String).Trim()
+    if ($GhUser -and $Mode -eq 'install' -and -not (& git config --global user.name)) {
+      & git config --global user.name $GhUser
+      & git config --global user.email "$((& gh api user -q .id | Out-String).Trim())+$GhUser@users.noreply.github.com"
+    }
+  }
+}
+
+# ---------- Result ----------
+Write-Host ""; Write-Host " RESULT " -ForegroundColor White -BackgroundColor DarkBlue
+$All = $true
+if ($tools.git) { OK "Git" } else { BAD "Git (T1)"; $All = $false }
+if ($tools.gh)  { OK "GitHub tool" } else { BAD "GitHub tool (T2)"; $All = $false }
+if ($ccv) { OK "Claude Code $ccv" } else { BAD "Claude Code (C1)"; $All = $false }
+if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw) -match '"ANTHROPIC_AUTH_TOKEN":\s*"sk-or-')) { OK "Your settings (work in every folder)" } else { BAD "Your settings (run setup)"; $All = $false }
+if ($ClOK) { OK "The AI works" } else { BAD "The AI ($(if ($ClCode) { $ClCode } else { 'not tested' }))"; $All = $false }
+if ($GhUser) { OK "GitHub account: $GhUser  (not you? run  gh auth logout  then run setup again)" } else { BAD "GitHub not connected (G1)"; $All = $false }
+if ($tools.node)   { OK "Node.js" } else { NOTE "Node.js not installed (optional)" }
+if ($tools.python) { OK "Python" } else { NOTE "Python not installed (optional)" }
+if (Test-Path "$env:USERPROFILE\.claude\skills\ui-ux-pro-max\SKILL.md") { OK "Design skills (UI/UX Pro Max)" } else { NOTE "Design skill not installed (optional)" }
+
+Write-Host ""
+if ($All) {
+  Write-Host "                                  " -BackgroundColor Green
+  Write-Host "     Your Setup Is Complete       " -ForegroundColor Black -BackgroundColor Green
+  Write-Host "                                  " -BackgroundColor Green
+  Write-Host ""
+  Write-Host "PASS" -ForegroundColor Green
+  ACT "Take a screenshot of this window and submit it in the form from your email."
+  if ($Mode -eq 'install') {
+    Write-Host ""
+    Write-Host "To start Claude Code:"
+    Write-Host "  1. Close ALL PowerShell windows."
+    Write-Host "  2. Open PowerShell again (Windows key, type PowerShell, Enter)."
+    Write-Host "  3. Type  claude  and press Enter."
+    Write-Host ""
+    Write-Host "Your key works in every folder. In a new PowerShell window, claude starts in: $Dir"
+    Write-Host "To work somewhere else, go to that folder first (e.g.  cd Desktop\my-site ), then type  claude"
+    Write-Host "If Claude asks 'Do you trust the files in this folder?', press Enter."
+  }
+  return
+}
+if ($Mode -eq 'check') {
+  TAG 'CHECK DONE' 'DarkYellow'; FIXT " Anything marked FAIL above is not ready. Run setup to fix it."
+  Show-Cmd $SetupCmd
+  return
+}
+if ($ClCode -eq 'N1') { NetFail }
+if ($ClCode) { Fail $ClCode $ClMsg $SetupCmd }
+if (-not $GhUser) { Fail G1 "GitHub is not connected yet. Run setup again and do the GitHub steps (press Enter, click the green buttons, type the code).`nNo GitHub account? Make one at github.com, confirm your email, then run setup again." $SetupCmd }
+Fail X2 "Something above is marked FAIL. Run setup again." $SetupCmd
+}
+
+# ---------- Run it. Any unexpected error still ends with a clear message. ----------
+try { Invoke-HackathonSetup }
+catch {
+  if ("$_" -ne 'HACKATHON_FAIL') {
+    Write-Host ""
+    Write-Host " FAIL X1 " -ForegroundColor White -BackgroundColor DarkRed
+    Write-Host "Setup stopped during: $script:Step. Run setup again. It continues where it stopped. " -ForegroundColor Black -BackgroundColor Cyan
+    Write-Host ""
+    Write-Host " Copy this line, paste it in PowerShell (right-click to paste), press Enter: " -ForegroundColor Black -BackgroundColor Yellow
+    Write-Host ""
+    Write-Host "    irm https://raw.githubusercontent.com/Sai-Blackbyrn/hackathon-setup/refs/heads/main/setup-windows.ps1 | iex"
+    Write-Host ""
+    Write-Host "Still stuck? Paste a screenshot into the Setup Helper chat: https://chat.aishifttraining.com"
+    Write-Host "Details: $_"
+  }
+}
+finally { if ($script:Transcript) { try { Stop-Transcript | Out-Null } catch {} } }
