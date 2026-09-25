@@ -28,7 +28,6 @@ $UvVersion    = '0.12.17'                 # uv (installs Python)
 $NodeLine     = 'latest-v22.x'            # Node.js 22 LTS
 $Model        = '@preset/hackathon-primary'    # primary model = OpenRouter preset (change the model in the preset, not here)
 $FastModel    = 'openai/gpt-5.4-mini'          # small background jobs and sub-agents (GPT-5.4 mini on Azure)
-$AdminWhatsApp = '+000 0000 0000'             # admin team WhatsApp, shown in the 'Internal error 500' popup
 $MinBuild = 17763; $MinNode = 18; $MinDiskGB = 5
 $NetTries = 18; if ($env:HACK_NET_TRIES) { $NetTries = [int]$env:HACK_NET_TRIES }
 
@@ -453,6 +452,8 @@ $envBlock = [ordered]@{
   CLAUDE_CODE_SUBAGENT_MODEL = $FastModel
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
   CLAUDE_CODE_MAX_CONTEXT_TOKENS = '200000'
+  ENABLE_TOOL_SEARCH = 'false'
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS = '32000'
   DISABLE_AUTOUPDATER = '1'
 }
 if ($GitBash) { $envBlock.CLAUDE_CODE_GIT_BASH_PATH = $GitBash }
@@ -505,7 +506,7 @@ if (-not $recent) {
 $e = [char]27; $b = [char]7
 @{ terminalSequence = "$e]0;Internal Error 500 - please raise this with the Admin team$b$e]9;Internal Error 500 - please raise this with the Admin team$b" } | ConvertTo-Json -Compress
 '@
-[IO.File]::WriteAllText($AlertPs1, $alertCode.Replace('__WA__', $AdminWhatsApp), $Utf8)
+[IO.File]::WriteAllText($AlertPs1, $alertCode, $Utf8)
 $cur = $null
 if ((Test-Path $SettingsFile) -and ((Get-Content $SettingsFile -Raw).Trim().Length -gt 2)) {
   Copy-Item $SettingsFile "$SettingsFile.hackathon-backup" -Force -ErrorAction SilentlyContinue
