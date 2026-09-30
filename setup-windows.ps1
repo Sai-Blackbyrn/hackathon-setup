@@ -574,7 +574,7 @@ try {
     $j.projects | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ hasTrustDialogAccepted = $true }) -Force
   }
   [IO.File]::WriteAllText($F, ($j | ConvertTo-Json -Depth 100), $Utf8)
-} catch { NOTE "If Claude asks 'Do you trust the files in this folder?', press Enter." }
+} catch { NOTE "If Claude asks if you trust this folder: your mouse does not work there. Use the up and down arrow keys until the arrow points at the line that starts with Yes, then press Enter." }
 
 # Typing "claude" works in the current folder (a plain new PowerShell window starts in the hackathon folder).
 # The .cmd file must only contain plain letters, so the user's folders are written as %VARIABLES%.
@@ -707,7 +707,7 @@ if ($All) {
     Write-Host ""
     Write-Host "Your key works in every folder. In a new PowerShell window, claude starts in: $Dir"
     Write-Host "To work somewhere else, go to that folder first (e.g.  cd Desktop\my-site ), then type  claude"
-    Write-Host "If Claude asks 'Do you trust the files in this folder?', press Enter."
+    Write-Host "If Claude asks if you trust this folder: your mouse does not work there. Use the up and down arrow keys until the arrow points at the line that starts with Yes, then press Enter."
   }
   return
 }

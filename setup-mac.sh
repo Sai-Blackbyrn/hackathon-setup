@@ -635,7 +635,7 @@ if [ "$ALL" = 1 ]; then
     echo ""
     echo "Your key works in every folder. In a new Terminal, claude starts in ~/claude-hackathon."
     echo "To work somewhere else, go to that folder first (e.g.  cd Desktop/my-site ), then type  claude"
-    echo "If Claude asks 'Do you trust the files in this folder?', press Enter."
+    echo "If Claude asks if you trust this folder: your mouse does not work there. Use the up and down arrow keys until the arrow points at the line that starts with Yes, then press Enter."
   fi
   FAILED=1; sleep 1; exit 0
 fi
